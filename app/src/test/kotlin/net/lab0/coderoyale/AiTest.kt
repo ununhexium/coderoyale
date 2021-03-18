@@ -5,6 +5,7 @@ import Battlefield
 import EMPTY_STRUCTURE_TYPE
 import FRIENDLY_OWNER
 import MapSite
+import Memory
 import NO_OWNER
 import Position
 import QUEEN_TYPE
@@ -40,7 +41,7 @@ internal class AiTest {
   @Test
   fun `can build knights barracks`() {
     // when
-    val out = playTurn(Action.BuildKnightBarracks(116), Training.None)
+    val out = playTurn(Action.BuildStable(116), Training.None)
 
     // then
     assertThat(out[0]).isEqualTo("BUILD 116 BARRACKS-KNIGHT")
@@ -50,7 +51,7 @@ internal class AiTest {
   @Test
   fun `can build archer barracks`() {
     // when
-    val out = playTurn(Action.BuildArcherBarracks(116), Training.None)
+    val out = playTurn(Action.BuildArchery(116), Training.None)
 
     // then
     assertThat(out[0]).isEqualTo("BUILD 116 BARRACKS-ARCHER")
@@ -84,10 +85,10 @@ internal class AiTest {
     val mapSite2 = MapSite(2, Position(25, 25), 5)
     val mapSites = listOf(mapSite1, mapSite2)
     val sites = mapSites.map {
-      Site(it.siteId, 0, 0, EMPTY_STRUCTURE_TYPE, NO_OWNER, 0, 0)
+      Site(it.siteId, it, 0, 0, EMPTY_STRUCTURE_TYPE, NO_OWNER, 0, 0)
     }
     val queen = Soldier(Position(5, 5), FRIENDLY_OWNER, QUEEN_TYPE, 100)
-    val battlefield = Battlefield(mapSites, 0, TouchedSite(0), sites, listOf(queen))
+    val battlefield = Battlefield(Memory(), mapSites, 0, TouchedSite(0), sites, listOf(queen))
 
     // when
     val emptySites = battlefield.emptySites

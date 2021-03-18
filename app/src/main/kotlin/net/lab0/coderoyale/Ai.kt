@@ -39,6 +39,7 @@ inline class TouchedSite(val siteId: Int) {
 data class MapSite(val siteId: Int, val position: Position, val radius: Int)
 
 data class Battlefield(
+  val memory:Memory,
   val mapSites: List<MapSite>,
   val gold: Int,
   val touchedSite: TouchedSite,
@@ -56,14 +57,20 @@ data class Battlefield(
 
   // sites
 
-  val mySites: List<Site>
+  val friendlySites: List<Site>
     get() = sites.filter { it.isFriendly }
 
-  val iHaveBarracks: Boolean
-    get() = myBarracks.isNotEmpty()
+  val enemySites: List<Site>
+    get() = sites.filter { it.isEnemy }
 
-  val myBarracks: List<Site>
-    get() = mySites.filter { it.isBarracks }
+  val friendlyBarracks: List<Site>
+    get() = friendlySites.filter { it.isBarracks }
+
+  val friendlyStables: List<Site>
+    get() = friendlyBarracks.filter { memory.isStable(it.siteId) }
+
+  val friendlyArcheries: List<Site>
+    get() = friendlyBarracks.filter { memory.isArchery(it.siteId) }
 
   val touchedSiteAsSite: Site
     get() = sites.first { it.siteId == touchedSite.siteId }
@@ -80,12 +87,34 @@ data class Battlefield(
 
   // units
 
-  val queen: Soldier
-    get() = units.first { it.isQueen }
+  val friendlyArmy: List<Soldier> by lazy {
+    units.filter { it.isFriendly }
+  }
+
+  val enemyArmy: List<Soldier> by lazy {
+    units.filter { it.isEnemy }
+  }
+
+  val friendlyQueen: Soldier by lazy {
+    friendlyArmy.first { it.isQueen }
+  }
+
+  val enemyQueen: Soldier by lazy {
+    enemyArmy.first { it.isQueen }
+  }
+
+  val friendlyKnights: List<Soldier> by lazy {
+    friendlyArmy.filter { it.isKnight }
+  }
+
+  val friendlyArchers: List<Soldier> by lazy {
+    friendlyArmy.filter { it.isArcher }
+  }
 }
 
 data class Site(
   val siteId: Int,
+  val mapSite: MapSite,
   val ignore1: Int,
   val ignore2: Int,
   val structureType: Int,
@@ -125,6 +154,12 @@ data class Soldier(
 
   val isArcher: Boolean
     get() = unitType == ARCHER_TYPE
+
+  val isFriendly: Boolean
+    get() = owner == FRIENDLY_OWNER
+
+  val isEnemy: Boolean
+    get() = owner == FRIENDLY_OWNER
 }
 
 sealed class Action(val command: String) {
@@ -133,10 +168,10 @@ sealed class Action(val command: String) {
     constructor(x: Int, y: Int) : this(Position(x, y))
   }
 
-  data class BuildKnightBarracks(val siteId: Int) :
+  data class BuildStable(val siteId: Int) :
     Action("BUILD $siteId BARRACKS-KNIGHT")
 
-  data class BuildArcherBarracks(val siteId: Int) : Action("BUILD $siteId BARRACKS-ARCHER")
+  data class BuildArchery(val siteId: Int) : Action("BUILD $siteId BARRACKS-ARCHER")
 }
 
 data class Position(val x: Int, val y: Int) {
@@ -157,7 +192,49 @@ sealed class Training(val command: String) {
   object None : Training("TRAIN")
   class AtLocation(locationIds: List<Int>) :
     Training("TRAIN " + locationIds.joinToString(" ") { it.toString() }) {
-    constructor(vararg locationIds: Int) : this(locationIds.toList())
+    constructor(
+      locationId: Int,
+      vararg moreLocationIds: Int
+    ) : this(listOf(locationId) + moreLocationIds.toList())
+  }
+}
+
+class Memory(
+  // Map<SiteId, BarracksType>
+  private val currentBarracks: MutableMap<Int, BarrackType> = mutableMapOf()
+) {
+  enum class BarrackType {
+    STABLE,
+    ARCHERY
+  }
+
+  /**
+   * Remember a site as a stable
+   */
+  fun setStable(siteId: Int) {
+    currentBarracks[siteId] = BarrackType.STABLE
+  }
+
+  fun isStable(siteId:Int): Boolean {
+    return currentBarracks[siteId] == BarrackType.STABLE
+  }
+
+  /**
+   * Remember a site as an archery
+   */
+  fun setArchery(siteId: Int) {
+    currentBarracks[siteId] = BarrackType.ARCHERY
+  }
+
+  fun isArchery(siteId:Int): Boolean {
+    return currentBarracks[siteId] == BarrackType.ARCHERY
+  }
+
+  /**
+   * Deletes a site from the memory list
+   */
+  fun remove(siteId: Int) {
+    currentBarracks.remove(siteId)
   }
 }
 
@@ -170,11 +247,49 @@ fun playTurn(action: Action, train: Training): List<String> {
   return out
 }
 
+fun parseSites(mapSites: List<MapSite>, numSites: Int, input: Scanner): List<Site> {
+  return (0 until numSites).map {
+    val siteId = input.nextInt()
+    val ignore1 = input.nextInt() // used in future leagues
+    val ignore2 = input.nextInt() // used in future leagues
+    val structureType = input.nextInt() // -1 = No structure, 2 = Barracks
+    val owner = input.nextInt() // -1 = No structure, 0 = Friendly, 1 = Enemy
+    val param1 = input.nextInt()
+    val param2 = input.nextInt()
+
+    Site(
+      siteId,
+      mapSites.first { it.siteId == siteId },
+      ignore1,
+      ignore2,
+      structureType,
+      owner,
+      param1,
+      param2
+    )
+  }
+}
+
+private fun parseUnits(
+  numUnits: Int,
+  input: Scanner
+): List<Soldier> {
+  return (0 until numUnits).map {
+    val x = input.nextInt()
+    val y = input.nextInt()
+    val owner = input.nextInt()
+    val unitType = input.nextInt() // -1 = QUEEN, 0 = KNIGHT, 1 = ARCHER
+    val health = input.nextInt()
+
+    Soldier(Position(x, y), owner, unitType, health)
+  }
+}
+
 fun main(args: Array<String>) {
   val input = Scanner(System.`in`)
   val numSites = input.nextInt()
 
-  val existingSites = (0 until numSites).map {
+  val mapSites = (0 until numSites).map {
     val siteId = input.nextInt()
     val x = input.nextInt()
     val y = input.nextInt()
@@ -184,19 +299,23 @@ fun main(args: Array<String>) {
   }
 
   val turns = mutableListOf<Battlefield>()
+  val memory = Memory()
 
   // game loop
   while (true) {
     val gold = input.nextInt()
     val touchedSite = input.nextInt() // -1 if none
 
-    val sites = parseSites(numSites, input)
+    val sites = parseSites(mapSites, numSites, input)
     val numUnits = input.nextInt()
     val units = parseUnits(numUnits, input)
 
-    val battlefield = Battlefield(existingSites, gold, TouchedSite(touchedSite), sites, units)
+    // FIXME: ugly: memory is mutable and global to all turns
+    val battlefield = Battlefield(memory, mapSites, gold, TouchedSite(touchedSite), sites, units)
     // remember past states
     turns.add(battlefield)
+
+    postParse(battlefield)
 
     val commands = thinkVeryHard(turns, battlefield)
 
@@ -204,68 +323,143 @@ fun main(args: Array<String>) {
   }
 }
 
+fun postParse(battlefield: Battlefield) {
+  // refresh the site with potential enemy changes -> remove them from the known barracks
+  battlefield.enemySites.forEach {
+    battlefield.memory.remove(it.siteId)
+  }
+}
+
+
+interface QueenStrategy {
+  fun getAction(
+    turns: MutableList<Battlefield>,
+    battlefield: Battlefield
+  ): Action
+}
+
+interface TrainingStrategy {
+  fun getTraining(
+    turns: MutableList<Battlefield>,
+    battlefield: Battlefield
+  ): Training
+}
+
+interface Strategy {
+  val queen: QueenStrategy
+  val training: TrainingStrategy
+
+  fun result(
+    turns: MutableList<Battlefield>,
+    battlefield: Battlefield
+  ): Pair<Action, Training>
+}
+
+class StrategyComposer(
+  override val queen: QueenStrategy,
+  override val training: TrainingStrategy
+
+
+) : Strategy {
+  override fun result(
+    turns: MutableList<Battlefield>,
+    battlefield: Battlefield
+  ) =
+    queen.getAction(turns, battlefield) to training.getTraining(turns, battlefield)
+}
+
+object TakeNextEmptySite : QueenStrategy {
+  override fun getAction(
+    turns: MutableList<Battlefield>,
+    battlefield: Battlefield
+  ): Action {
+    val queen = battlefield.friendlyQueen
+
+    // take empty site if next to it
+    return if (battlefield.touchedSite.touches && battlefield.touchedSiteAsSite.isEmpty) {
+      if (battlefield.friendlyBarracks.count() % 2 == 0) {
+        battlefield.memory.setStable(battlefield.touchedSite.siteId)
+        Action.BuildStable(battlefield.touchedSite.siteId)
+      } else {
+        battlefield.memory.setArchery(battlefield.touchedSite.siteId)
+        Action.BuildArchery(battlefield.touchedSite.siteId)
+      }
+    } else {
+      // get the nearest unowned site
+      // TODO: travelling salesman problem?
+      val nearestSite = battlefield.emptySites.minBy {
+        it.position.distanceTo(queen.position)
+      }?.position
+
+      debug("Nearest empty site $nearestSite")
+
+      if (nearestSite != null) {
+        Action.Move(nearestSite)
+      } else {
+        // return to starting location for safety
+        Action.Move(turns.first().friendlyQueen.position)
+      }
+    }
+  }
+}
+
+object BuildKnights : TrainingStrategy {
+  override fun getTraining(turns: MutableList<Battlefield>, battlefield: Battlefield): Training {
+    // try to find barracks with that type of unit
+    val barracksClosestToEnemyQueen = battlefield.friendlyStables.minBy {
+      it.mapSite.position.distanceTo(battlefield.enemyQueen.position)
+    }?.siteId
+
+    return if (barracksClosestToEnemyQueen != null) {
+      Training.AtLocation(barracksClosestToEnemyQueen)
+    } else {
+      Training.None
+    }
+  }
+}
+
+object BuildArchers : TrainingStrategy {
+  override fun getTraining(turns: MutableList<Battlefield>, battlefield: Battlefield): Training {
+    // try to find barracks with that type of unit
+    val barracksClosestToFriendlyQueen = battlefield.friendlyArcheries.minBy {
+      it.mapSite.position.distanceTo(battlefield.friendlyQueen.position)
+    }?.siteId
+
+    return if (barracksClosestToFriendlyQueen != null) {
+      Training.AtLocation(barracksClosestToFriendlyQueen)
+    } else {
+      Training.None
+    }
+  }
+}
+
+object BalancedTrainingStrategy : TrainingStrategy {
+  override fun getTraining(
+    turns: MutableList<Battlefield>,
+    battlefield: Battlefield
+  ): Training {
+    // try to balance archers and knights when possible
+    val knightCount = battlefield.friendlyKnights.size
+    val archerCount = battlefield.friendlyArchers.size
+    debug("Barracks ${battlefield.memory}")
+    return if (knightCount < archerCount) {
+      debug("Build knight knights=$knightCount, archers=$archerCount")
+      BuildKnights.getTraining(turns, battlefield)
+    } else {
+      debug("Build archer knights=$knightCount, archers=$archerCount")
+      BuildArchers.getTraining(turns, battlefield)
+    }
+  }
+}
+
+val strategy = StrategyComposer(
+  TakeNextEmptySite,
+  BalancedTrainingStrategy
+)
+
 fun thinkVeryHard(
   turns: MutableList<Battlefield>,
   battlefield: Battlefield
 ): Pair<Action, Training> {
-  val queen = battlefield.queen
-
-  // take empty site if next to it
-  val action = if (battlefield.touchedSite.touches && battlefield.touchedSiteAsSite.isEmpty) {
-    Action.BuildKnightBarracks(battlefield.touchedSite.siteId)
-  } else {
-    // get the nearest unowned site
-    // TODO: travelling salesman problem?
-    val nearestSite = battlefield.emptySites.minBy {
-      it.position.distanceTo(queen.position)
-    }?.position
-
-    debug("Nearest empty site $nearestSite")
-
-    if (nearestSite != null) {
-      Action.Move(nearestSite)
-    } else {
-      // return to starting location for safety
-      Action.Move(turns.first().queen.position)
-    }
-  }
-
-  val build = if (battlefield.canBuildKnight && battlefield.iHaveBarracks) {
-    Training.AtLocation(battlefield.myBarracks.first().siteId)
-  } else {
-    Training.None
-  }
-
-  return action to build
-}
-
-fun parseSites(numSites: Int, input: Scanner): List<Site> {
-  val sites = (0 until numSites).map {
-    val siteId = input.nextInt()
-    val ignore1 = input.nextInt() // used in future leagues
-    val ignore2 = input.nextInt() // used in future leagues
-    val structureType = input.nextInt() // -1 = No structure, 2 = Barracks
-    val owner = input.nextInt() // -1 = No structure, 0 = Friendly, 1 = Enemy
-    val param1 = input.nextInt()
-    val param2 = input.nextInt()
-
-    Site(siteId, ignore1, ignore2, structureType, owner, param1, param2)
-  }
-  return sites
-}
-
-private fun parseUnits(
-  numUnits: Int,
-  input: Scanner
-): List<Soldier> {
-  val units = (0 until numUnits).map {
-    val x = input.nextInt()
-    val y = input.nextInt()
-    val owner = input.nextInt()
-    val unitType = input.nextInt() // -1 = QUEEN, 0 = KNIGHT, 1 = ARCHER
-    val health = input.nextInt()
-
-    Soldier(Position(x, y), owner, unitType, health)
-  }
-  return units
+  return strategy.result(turns, battlefield)
 }
