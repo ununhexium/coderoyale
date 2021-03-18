@@ -39,7 +39,7 @@ inline class TouchedSite(val siteId: Int) {
 data class MapSite(val siteId: Int, val position: Position, val radius: Int)
 
 data class Battlefield(
-  val memory:Memory,
+  val memory: Memory,
   val mapSites: List<MapSite>,
   val gold: Int,
   val touchedSite: TouchedSite,
@@ -215,7 +215,7 @@ class Memory(
     currentBarracks[siteId] = BarrackType.STABLE
   }
 
-  fun isStable(siteId:Int): Boolean {
+  fun isStable(siteId: Int): Boolean {
     return currentBarracks[siteId] == BarrackType.STABLE
   }
 
@@ -226,7 +226,7 @@ class Memory(
     currentBarracks[siteId] = BarrackType.ARCHERY
   }
 
-  fun isArchery(siteId:Int): Boolean {
+  fun isArchery(siteId: Int): Boolean {
     return currentBarracks[siteId] == BarrackType.ARCHERY
   }
 
@@ -368,6 +368,8 @@ class StrategyComposer(
     queen.getAction(turns, battlefield) to training.getTraining(turns, battlefield)
 }
 
+// QUEEN STRATEGIES
+
 object TakeNextEmptySite : QueenStrategy {
   override fun getAction(
     turns: MutableList<Battlefield>,
@@ -403,6 +405,30 @@ object TakeNextEmptySite : QueenStrategy {
   }
 }
 
+/**
+ * Put the queen in a safe-ish place
+ */
+object Fallback : QueenStrategy {
+  override fun getAction(
+    turns: MutableList<Battlefield>,
+    battlefield: Battlefield
+  ): Action {
+    return Action.Move(turns.first().friendlyQueen.position)
+  }
+}
+
+object TakeThenFallback : QueenStrategy {
+  override fun getAction(turns: MutableList<Battlefield>, battlefield: Battlefield): Action {
+    return if (battlefield.friendlyQueen.health < turns.first().friendlyQueen.health / 2) {
+      Fallback.getAction(turns, battlefield)
+    } else {
+      TakeNextEmptySite.getAction(turns, battlefield)
+    }
+  }
+}
+
+// BUILDING STRATEGIES
+
 object BuildKnights : TrainingStrategy {
   override fun getTraining(turns: MutableList<Battlefield>, battlefield: Battlefield): Training {
     // try to find barracks with that type of unit
@@ -433,7 +459,7 @@ object BuildArchers : TrainingStrategy {
   }
 }
 
-object BalancedTrainingStrategy : TrainingStrategy {
+class BalancedTrainingStrategy(val maxKnightToArcherRatio:Float) : TrainingStrategy {
   override fun getTraining(
     turns: MutableList<Battlefield>,
     battlefield: Battlefield
@@ -442,7 +468,8 @@ object BalancedTrainingStrategy : TrainingStrategy {
     val knightCount = battlefield.friendlyKnights.size
     val archerCount = battlefield.friendlyArchers.size
     debug("Barracks ${battlefield.memory}")
-    return if (knightCount < archerCount) {
+    val ratio = knightCount / archerCount.toDouble()
+    return if (ratio < maxKnightToArcherRatio) {
       debug("Build knight knights=$knightCount, archers=$archerCount")
       BuildKnights.getTraining(turns, battlefield)
     } else {
@@ -453,8 +480,8 @@ object BalancedTrainingStrategy : TrainingStrategy {
 }
 
 val strategy = StrategyComposer(
-  TakeNextEmptySite,
-  BalancedTrainingStrategy
+  TakeThenFallback,
+  BalancedTrainingStrategy(3f)
 )
 
 fun thinkVeryHard(
