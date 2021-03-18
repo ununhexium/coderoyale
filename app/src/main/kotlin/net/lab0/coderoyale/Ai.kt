@@ -64,7 +64,10 @@ data class Soldier(
 
 sealed class Action(val command: String) {
   object Wait : Action("WAIT")
-  data class Move(val position: Position) : Action("MOVE ${position.x} ${position.y}")
+  data class Move(val position: Position) : Action("MOVE ${position.x} ${position.y}") {
+    constructor(x: Int, y: Int) : this(Position(x, y))
+  }
+
   data class BuildKnightBarracks(val siteId: Int) : Action("BUILD $siteId BARRACKS-KNIGHT")
   data class BuildArcherBarracks(val siteId: Int) : Action("BUILD $siteId BARRACKS-ARCHER")
 }
@@ -73,8 +76,10 @@ data class Position(val x: Int, val y: Int)
 
 sealed class TrainSoldiers(val command: String) {
   object None : TrainSoldiers("TRAIN")
-  class AtLocation(locations: List<Int>) :
-    TrainSoldiers("TRAIN " + locations.joinToString(" ") { it.toString() })
+  class AtLocation(locationIds: List<Int>) :
+    TrainSoldiers("TRAIN " + locationIds.joinToString(" ") { it.toString() }) {
+    constructor(vararg locationIds: Int) : this(locationIds.toList())
+  }
 }
 
 fun playTurn(action: Action, train: TrainSoldiers): List<String> {
