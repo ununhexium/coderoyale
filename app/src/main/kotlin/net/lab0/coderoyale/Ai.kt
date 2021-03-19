@@ -13,6 +13,9 @@ fun debug(any: Any?) {
 
 // constants
 
+const val MAX_WIDTH = 1920
+const val MAX_HEIGHT = 1000
+
 // mining
 
 const val MAX_GOLD_MINE_RATE = 5
@@ -155,7 +158,7 @@ sealed class Site(
   }
 }
 
-data class ParsedSites(
+data class PlayerSites(
   val goldMines: List<Site.GoldMine>,
   val towers: List<Site.Tower>,
   val stables: List<Site.Barracks>,
@@ -163,7 +166,7 @@ data class ParsedSites(
   val phlegra: List<Site.Barracks>
 ) {
   companion object {
-    val empty = ParsedSites(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
+    val empty = PlayerSites(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
   }
 
   // aggregates
@@ -174,8 +177,8 @@ data class ParsedSites(
 data class Sites(
   val emptySites: List<Site.Empty>,
 
-  val friendly: ParsedSites,
-  val enemy: ParsedSites
+  val friendly: PlayerSites,
+  val enemy: PlayerSites
 ) {
   val all = friendly.allOwned + enemy.allOwned + emptySites
 }
@@ -241,11 +244,6 @@ sealed class TrainingAction(val command: String) {
   }
 }
 
-enum class BarrackType {
-  STABLE,
-  ARCHERY
-}
-
 data class Battlefield(
   val mapSites: List<MapSite>,
   val gold: Int,
@@ -290,37 +288,126 @@ data class Battlefield(
   }
 }
 
-class Decision(val action: QueenAction, val train: TrainingAction)
+
+interface QueenStrategy {
+  object EMPTY : QueenStrategy {
+    override fun getAction(game: Game) = QueenAction.Wait
+  }
+
+  fun getAction(game: Game): QueenAction
+}
+
+interface TrainingStrategy {
+  fun getTraining(game: Game): TrainingAction
+}
+
+interface Strategy {
+  object NoOp : Strategy {
+    override fun result(game: Game) = Decision.NoOp
+  }
+
+  fun result(game: Game): Decision
+}
+
+interface MetaStrategy {
+  fun selectStrategy(game: Game): Strategy
+}
+
+class CombinerStrategy(
+  val queen: QueenStrategy,
+  val training: TrainingStrategy
+) : Strategy {
+  override fun result(game: Game) = Decision(
+    queen.getAction(game),
+    training.getTraining(game)
+  )
+}
+
+
+class Decision(
+  val intent: QueenAction,
+  val training: TrainingAction
+) {
+  companion object {
+    val NoOp = Decision(QueenAction.Wait, TrainingAction.None)
+  }
+}
+
 
 class Turn(
   val battlefield: Battlefield,
-  val strategy: CombinerStrategy,
+  val strategy: Strategy,
   val decision: Decision
 )
 
-class History {
-  private val _turns: MutableList<Turn> = mutableListOf()
-
+class History(private val _turns: MutableList<Turn> = mutableListOf()) {
   val turns: List<Turn>
     get() = _turns
 
   fun addTurn(turn: Turn) =
     _turns.add(turn)
+}
+
+class Game(
+  private var internalMetaStrategy: MetaStrategy,
+  val history: History = History(),
+  private var currentStrategy: Strategy = Strategy.NoOp,
+  battlefield: Battlefield? = null
+) {
+  private lateinit var currentBattlefield: Battlefield
+
+  init {
+    battlefield?.let { currentBattlefield = it }
+  }
+
+  val battlefield
+    get() = currentBattlefield
+
+  val strategy
+    get() = currentStrategy
+
+  val meta: MetaStrategy
+    get() = internalMetaStrategy
 
   val lastTurnGoldGain: Int
-    get() = 0
+    get() {
+      val lastTurn = history.turns.lastOrNull() ?: return 0
+
+      return currentBattlefield.gold - lastTurn.battlefield.gold
+    }
+
+  val lastOutput
+    get() = out
+
+
+  private var out: List<String> = listOf()
+
+  fun playTurn(battlefield: Battlefield): List<String> {
+    currentBattlefield = battlefield
+    currentStrategy = meta.selectStrategy(this)
+
+    val decision = currentStrategy.result(this)
+
+    out = listOf(decision.intent.command, decision.training.command)
+
+    out.forEach { println(it) }
+
+    history.addTurn(Turn(currentBattlefield, currentStrategy, decision))
+
+    // for tests
+    return out
+  }
 }
 
-val history = History()
+val game = Game(
+  internalMetaStrategy = FixedMeta(
+    CombinerStrategy(
+      TakeThenFallback,
+      BalancedTrainingStrategy(3f)
+    )
+  )
+)
 
-fun playTurn(decision: Decision): List<String> {
-  val out = listOf(decision.action.command, decision.train.command)
-
-  out.forEach { println(it) }
-
-  // for tests
-  return out
-}
 
 fun parseSites(mapSites: List<MapSite>, numSites: Int, input: Scanner): Sites {
 
@@ -437,14 +524,14 @@ fun parseSites(mapSites: List<MapSite>, numSites: Int, input: Scanner): Sites {
 
   return Sites(
     emptySites,
-    ParsedSites(
+    PlayerSites(
       ownedSites[0].goldMines,
       ownedSites[0].towers,
       ownedSites[0].stables,
       ownedSites[0].archeries,
       ownedSites[0].phlegra
     ),
-    ParsedSites(
+    PlayerSites(
       ownedSites[1].goldMines,
       ownedSites[1].towers,
       ownedSites[1].stables,
@@ -482,11 +569,6 @@ fun main(args: Array<String>) {
     MapSite(siteId, Position(x, y), radius)
   }
 
-  val initialStrategy = CombinerStrategy(
-    TakeThenFallback,
-    BalancedTrainingStrategy(3f)
-  )
-
   // game loop
   while (true) {
     val gold = input.nextInt()
@@ -499,53 +581,10 @@ fun main(args: Array<String>) {
     // FIXME: ugly: memory is mutable and global to all turns
     val battlefield = Battlefield(mapSites, gold, TouchedSite(touchedSite), sites, units)
 
-    val strategy = history.turns.lastOrNull()?.strategy?.copy() ?: initialStrategy
-    val decision = strategy.result(history, battlefield)
-
-    playTurn(decision)
-
-    // remember past states
-    history.addTurn(Turn(battlefield, strategy, decision))
+    game.playTurn(battlefield)
   }
 }
 
-
-interface QueenStrategy {
-  fun getAction(
-    history: History,
-    battlefield: Battlefield
-  ): QueenAction
-}
-
-interface TrainingStrategy {
-  fun getTraining(
-    history: History,
-    battlefield: Battlefield
-  ): TrainingAction
-}
-
-interface Strategy {
-  val queen: QueenStrategy
-  val training: TrainingStrategy
-
-  fun result(
-    history: History,
-    battlefield: Battlefield
-  ): Decision
-}
-
-data class CombinerStrategy(
-  override val queen: QueenStrategy,
-  override val training: TrainingStrategy
-) : Strategy {
-  override fun result(
-    history: History,
-    battlefield: Battlefield
-  ) = Decision(
-    queen.getAction(history, battlefield),
-    training.getTraining(history, battlefield)
-  )
-}
 
 /**
  * STRATEGIES
@@ -561,14 +600,29 @@ data class CombinerStrategy(
  *```
  */
 
+// META
+
+/**
+ * Keep the existing strategy
+ */
+object StaticMeta : MetaStrategy {
+  override fun selectStrategy(game: Game): Strategy = game.strategy
+}
+
+/**
+ * Force a specific strategy
+ */
+class FixedMeta(val fixed: Strategy) : MetaStrategy {
+  override fun selectStrategy(game: Game): Strategy = fixed
+}
+
 // QUEEN STRATEGIES
 
 object TakeNextEmptySite : QueenStrategy {
-  override fun getAction(
-    history: History,
-    battlefield: Battlefield
-  ): QueenAction {
-    val queen = battlefield.friendlyQueen
+  override fun getAction(game: Game): QueenAction {
+    val queen = game.battlefield.friendlyQueen
+    val battlefield = game.battlefield
+    val history = game.history
 
     // take empty site if next to it
     return if (battlefield.touchedSite.touches && battlefield.touchedSiteAsSite.isEmpty) {
@@ -590,28 +644,31 @@ object TakeNextEmptySite : QueenStrategy {
         QueenAction.Move(nearestSite)
       } else {
         // return to starting location for safety
-        QueenAction.Move(history.turns.first().battlefield.friendlyQueen.position)
+        QueenAction.Move(
+          history.turns.firstOrNull()?.let { it.battlefield.friendlyQueen.position }
+            ?: game.battlefield.friendlyQueen.position // 1st turn case
+        )
       }
     }
   }
 }
 
 object FallbackToOrigin : QueenStrategy {
-  override fun getAction(
-    history: History,
-    battlefield: Battlefield
-  ): QueenAction {
+  override fun getAction(game: Game): QueenAction {
+    val history = game.history
     return QueenAction.Move(history.turns.first().battlefield.friendlyQueen.position)
   }
 }
 
 object TakeThenFallback : QueenStrategy {
-  override fun getAction(history: History, battlefield: Battlefield): QueenAction {
+  override fun getAction(game: Game): QueenAction {
+    val battlefield = game.battlefield
+    val history = game.history
     val firstBattlefield = history.turns.firstOrNull()?.battlefield ?: battlefield
     return if (battlefield.friendlyQueen.health < firstBattlefield.friendlyQueen.health / 2) {
-      FallbackToOrigin.getAction(history, battlefield)
+      FallbackToOrigin.getAction(game)
     } else {
-      TakeNextEmptySite.getAction(history, battlefield)
+      TakeNextEmptySite.getAction(game)
     }
   }
 }
@@ -628,11 +685,10 @@ object TakeThenFallback : QueenStrategy {
 // BUILDING STRATEGIES
 
 object BuildKnightsCloserToEnemyQueen : TrainingStrategy {
-  override fun getTraining(
-    history: History,
-    battlefield: Battlefield
-  ): TrainingAction {
+  override fun getTraining(game: Game): TrainingAction {
     // try to find barracks with that type of unit
+    val battlefield = game.battlefield
+
     val barracksClosestToEnemyQueen = battlefield.sites.friendly.stables.minBy {
       it.mapSite.position.distanceTo(battlefield.enemyQueen.position)
     }?.siteId
@@ -646,10 +702,9 @@ object BuildKnightsCloserToEnemyQueen : TrainingStrategy {
 }
 
 object BuildArchers : TrainingStrategy {
-  override fun getTraining(
-    history: History,
-    battlefield: Battlefield
-  ): TrainingAction {
+  override fun getTraining(game: Game): TrainingAction {
+    val battlefield = game.battlefield
+
     // try to find barracks with that type of unit
     val barracksClosestToFriendlyQueen = battlefield.sites.friendly.archeries.minBy {
       it.mapSite.position.distanceTo(battlefield.friendlyQueen.position)
@@ -664,10 +719,9 @@ object BuildArchers : TrainingStrategy {
 }
 
 data class BalancedTrainingStrategy(val maxKnightToArcherRatio: Float) : TrainingStrategy {
-  override fun getTraining(
-    history: History,
-    battlefield: Battlefield
-  ): TrainingAction {
+  override fun getTraining(game: Game): TrainingAction {
+    val battlefield = game.battlefield
+
     // try to balance archers and knights when possible
     val knightCount = battlefield.friendlyKnights.size
     val archerCount = battlefield.friendlyArchers.size
@@ -675,10 +729,10 @@ data class BalancedTrainingStrategy(val maxKnightToArcherRatio: Float) : Trainin
     val ratio = knightCount / archerCount.toDouble()
     return if (ratio < maxKnightToArcherRatio) {
       debug("Build knight knights=$knightCount, archers=$archerCount")
-      BuildKnightsCloserToEnemyQueen.getTraining(history, battlefield)
+      BuildKnightsCloserToEnemyQueen.getTraining(game)
     } else {
       debug("Build archer knights=$knightCount, archers=$archerCount")
-      BuildArchers.getTraining(history, battlefield)
+      BuildArchers.getTraining(game)
     }
   }
 }
