@@ -246,43 +246,7 @@ enum class BarrackType {
   ARCHERY
 }
 
-class Memory(
-  // Map<SiteId, BarracksType>
-  private val currentBarracks: MutableMap<Int, BarrackType> = mutableMapOf()
-) {
-
-  /**
-   * Remember a site as a stable
-   */
-  fun setStable(siteId: Int) {
-    currentBarracks[siteId] = BarrackType.STABLE
-  }
-
-  fun isStable(siteId: Int): Boolean {
-    return currentBarracks[siteId] == BarrackType.STABLE
-  }
-
-  /**
-   * Remember a site as an archery
-   */
-  fun setArchery(siteId: Int) {
-    currentBarracks[siteId] = BarrackType.ARCHERY
-  }
-
-  fun isArchery(siteId: Int): Boolean {
-    return currentBarracks[siteId] == BarrackType.ARCHERY
-  }
-
-  /**
-   * Deletes a site from the memory list
-   */
-  fun remove(siteId: Int) {
-    currentBarracks.remove(siteId)
-  }
-}
-
 data class Battlefield(
-  val memory: Memory,
   val mapSites: List<MapSite>,
   val gold: Int,
   val touchedSite: TouchedSite,
@@ -518,8 +482,6 @@ fun main(args: Array<String>) {
     MapSite(siteId, Position(x, y), radius)
   }
 
-  val memory = Memory()
-
   val initialStrategy = CombinerStrategy(
     TakeThenFallback,
     BalancedTrainingStrategy(3f)
@@ -535,7 +497,7 @@ fun main(args: Array<String>) {
     val units = parseUnits(numUnits, input)
 
     // FIXME: ugly: memory is mutable and global to all turns
-    val battlefield = Battlefield(memory, mapSites, gold, TouchedSite(touchedSite), sites, units)
+    val battlefield = Battlefield(mapSites, gold, TouchedSite(touchedSite), sites, units)
 
     val strategy = history.turns.lastOrNull()?.strategy?.copy() ?: initialStrategy
     val decision = strategy.result(history, battlefield)
@@ -611,10 +573,8 @@ object TakeNextEmptySite : QueenStrategy {
     // take empty site if next to it
     return if (battlefield.touchedSite.touches && battlefield.touchedSiteAsSite.isEmpty) {
       if (battlefield.sites.friendly.barracks.count() % 2 == 0) {
-        battlefield.memory.setStable(battlefield.touchedSite.siteId)
         QueenAction.BuildStable(battlefield.touchedSite.siteId)
       } else {
-        battlefield.memory.setArchery(battlefield.touchedSite.siteId)
         QueenAction.BuildArchery(battlefield.touchedSite.siteId)
       }
     } else {
@@ -711,7 +671,7 @@ data class BalancedTrainingStrategy(val maxKnightToArcherRatio: Float) : Trainin
     // try to balance archers and knights when possible
     val knightCount = battlefield.friendlyKnights.size
     val archerCount = battlefield.friendlyArchers.size
-    debug("Barracks ${battlefield.memory}")
+
     val ratio = knightCount / archerCount.toDouble()
     return if (ratio < maxKnightToArcherRatio) {
       debug("Build knight knights=$knightCount, archers=$archerCount")
