@@ -2,8 +2,9 @@ import java.util.*
 import kotlin.math.sqrt
 
 /**
- * Auto-generated code below aims at helping you parse
- * the standard input according to the problem statement.
+ * The upper part of the code is just declarations and boring parsing,
+ *
+ * strategies start at the STRATEGIES comment
  */
 
 fun debug(any: Any?) {
@@ -161,6 +162,10 @@ data class ParsedSites(
   val archeries: List<Site.Barracks>,
   val phlegra: List<Site.Barracks>
 ) {
+  companion object {
+    val empty = ParsedSites(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
+  }
+
   // aggregates
   val barracks = stables + archeries + phlegra
   val allOwned: List<Site> = goldMines + towers + barracks
@@ -325,10 +330,24 @@ class Decision(val action: QueenAction, val train: TrainingAction)
 
 class Turn(
   val battlefield: Battlefield,
+  val strategy: CombinerStrategy,
   val decision: Decision
 )
 
-val turns = mutableListOf<Turn>()
+class History {
+  private val _turns: MutableList<Turn> = mutableListOf()
+
+  val turns: List<Turn>
+    get() = _turns
+
+  fun addTurn(turn: Turn) =
+    _turns.add(turn)
+
+  val lastTurnGoldGain: Int
+    get() = 0
+}
+
+val history = History()
 
 fun playTurn(decision: Decision): List<String> {
   val out = listOf(decision.action.command, decision.train.command)
@@ -501,6 +520,11 @@ fun main(args: Array<String>) {
 
   val memory = Memory()
 
+  val initialStrategy = CombinerStrategy(
+    TakeThenFallback,
+    BalancedTrainingStrategy(3f)
+  )
+
   // game loop
   while (true) {
     val gold = input.nextInt()
@@ -513,26 +537,27 @@ fun main(args: Array<String>) {
     // FIXME: ugly: memory is mutable and global to all turns
     val battlefield = Battlefield(memory, mapSites, gold, TouchedSite(touchedSite), sites, units)
 
-    val decision = thinkVeryHard(turns, battlefield)
+    val strategy = history.turns.lastOrNull()?.strategy?.copy() ?: initialStrategy
+    val decision = strategy.result(history, battlefield)
 
     playTurn(decision)
 
     // remember past states
-    turns.add(Turn(battlefield, decision))
+    history.addTurn(Turn(battlefield, strategy, decision))
   }
 }
 
 
 interface QueenStrategy {
   fun getAction(
-    turns: List<Turn>,
+    history: History,
     battlefield: Battlefield
   ): QueenAction
 }
 
 interface TrainingStrategy {
   fun getTraining(
-    turns: List<Turn>,
+    history: History,
     battlefield: Battlefield
   ): TrainingAction
 }
@@ -542,29 +567,43 @@ interface Strategy {
   val training: TrainingStrategy
 
   fun result(
-    turns: List<Turn>,
+    history: History,
     battlefield: Battlefield
   ): Decision
 }
 
-class StrategyComposer(
+data class CombinerStrategy(
   override val queen: QueenStrategy,
   override val training: TrainingStrategy
 ) : Strategy {
   override fun result(
-    turns: List<Turn>,
+    history: History,
     battlefield: Battlefield
   ) = Decision(
-    queen.getAction(turns, battlefield),
-    training.getTraining(turns, battlefield)
+    queen.getAction(history, battlefield),
+    training.getTraining(history, battlefield)
   )
 }
+
+/**
+ * STRATEGIES
+ *
+ * ```
+.#####
+#     # ##### #####    ##   ##### ######  ####  # ######  ####
+#         #   #    #  #  #    #   #      #    # # #      #
+.#####    #   #    # #    #   #   #####  #      # #####   ####
+......#   #   #####  ######   #   #      #  ### # #           #
+#     #   #   #   #  #    #   #   #      #    # # #      #    #
+.#####    #   #    # #    #   #   ######  ####  # ######  ####
+ *```
+ */
 
 // QUEEN STRATEGIES
 
 object TakeNextEmptySite : QueenStrategy {
   override fun getAction(
-    turns: List<Turn>,
+    history: History,
     battlefield: Battlefield
   ): QueenAction {
     val queen = battlefield.friendlyQueen
@@ -591,40 +630,46 @@ object TakeNextEmptySite : QueenStrategy {
         QueenAction.Move(nearestSite)
       } else {
         // return to starting location for safety
-        QueenAction.Move(turns.first().battlefield.friendlyQueen.position)
+        QueenAction.Move(history.turns.first().battlefield.friendlyQueen.position)
       }
     }
   }
 }
 
-/**
- * Put the queen in a safe-ish place
- */
-object Fallback : QueenStrategy {
+object FallbackToOrigin : QueenStrategy {
   override fun getAction(
-    turns: List<Turn>,
+    history: History,
     battlefield: Battlefield
   ): QueenAction {
-    return QueenAction.Move(turns.first().battlefield.friendlyQueen.position)
+    return QueenAction.Move(history.turns.first().battlefield.friendlyQueen.position)
   }
 }
 
 object TakeThenFallback : QueenStrategy {
-  override fun getAction(turns: List<Turn>, battlefield: Battlefield): QueenAction {
-    val firstBattlefield = turns.firstOrNull()?.battlefield ?: battlefield
+  override fun getAction(history: History, battlefield: Battlefield): QueenAction {
+    val firstBattlefield = history.turns.firstOrNull()?.battlefield ?: battlefield
     return if (battlefield.friendlyQueen.health < firstBattlefield.friendlyQueen.health / 2) {
-      Fallback.getAction(turns, battlefield)
+      FallbackToOrigin.getAction(history, battlefield)
     } else {
-      TakeNextEmptySite.getAction(turns, battlefield)
+      TakeNextEmptySite.getAction(history, battlefield)
     }
   }
 }
 
+//class OutmineAndDefend(val goldIncomeTarget: Int) : QueenStrategy {
+//  override fun getAction(history: History, battlefield: Battlefield): QueenAction {
+//    // prio 1: get gold
+//    if (history.lastTurnGoldGain < goldIncomeTarget) {
+//      // TODO
+//    }
+//  }
+//}
+
 // BUILDING STRATEGIES
 
-object BuildKnights : TrainingStrategy {
+object BuildKnightsCloserToEnemyQueen : TrainingStrategy {
   override fun getTraining(
-    turns: List<Turn>,
+    history: History,
     battlefield: Battlefield
   ): TrainingAction {
     // try to find barracks with that type of unit
@@ -642,7 +687,7 @@ object BuildKnights : TrainingStrategy {
 
 object BuildArchers : TrainingStrategy {
   override fun getTraining(
-    turns: List<Turn>,
+    history: History,
     battlefield: Battlefield
   ): TrainingAction {
     // try to find barracks with that type of unit
@@ -658,9 +703,9 @@ object BuildArchers : TrainingStrategy {
   }
 }
 
-class BalancedTrainingStrategy(val maxKnightToArcherRatio: Float) : TrainingStrategy {
+data class BalancedTrainingStrategy(val maxKnightToArcherRatio: Float) : TrainingStrategy {
   override fun getTraining(
-    turns: List<Turn>,
+    history: History,
     battlefield: Battlefield
   ): TrainingAction {
     // try to balance archers and knights when possible
@@ -670,22 +715,11 @@ class BalancedTrainingStrategy(val maxKnightToArcherRatio: Float) : TrainingStra
     val ratio = knightCount / archerCount.toDouble()
     return if (ratio < maxKnightToArcherRatio) {
       debug("Build knight knights=$knightCount, archers=$archerCount")
-      BuildKnights.getTraining(turns, battlefield)
+      BuildKnightsCloserToEnemyQueen.getTraining(history, battlefield)
     } else {
       debug("Build archer knights=$knightCount, archers=$archerCount")
-      BuildArchers.getTraining(turns, battlefield)
+      BuildArchers.getTraining(history, battlefield)
     }
   }
 }
 
-val strategy = StrategyComposer(
-  TakeThenFallback,
-  BalancedTrainingStrategy(3f)
-)
-
-fun thinkVeryHard(
-  turns: MutableList<Turn>,
-  battlefield: Battlefield
-): Decision {
-  return strategy.result(turns, battlefield)
-}
