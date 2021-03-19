@@ -1,6 +1,6 @@
 package net.lab0.coderoyale
 
-import Action
+import QueenAction
 import Battlefield
 import EMPTY_STRUCTURE_TYPE
 import FRIENDLY_OWNER
@@ -12,7 +12,7 @@ import QUEEN_TYPE
 import Site
 import Soldier
 import TouchedSite
-import Training
+import TrainingAction
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import playTurn
@@ -21,7 +21,7 @@ internal class AiTest {
   @Test
   fun `can wait`() {
     // when
-    val out = playTurn(Action.Wait, Training.None)
+    val out = playTurn(QueenAction.Wait, TrainingAction.None)
 
     // then
     assertThat(out[0]).isEqualTo("WAIT")
@@ -31,7 +31,7 @@ internal class AiTest {
   @Test
   fun `can move`() {
     // when
-    val out = playTurn(Action.Move(12, 116), Training.None)
+    val out = playTurn(QueenAction.Move(12, 116), TrainingAction.None)
 
     // then
     assertThat(out[0]).isEqualTo("MOVE 12 116")
@@ -41,7 +41,7 @@ internal class AiTest {
   @Test
   fun `can build knights barracks`() {
     // when
-    val out = playTurn(Action.BuildStable(116), Training.None)
+    val out = playTurn(QueenAction.BuildStable(116), TrainingAction.None)
 
     // then
     assertThat(out[0]).isEqualTo("BUILD 116 BARRACKS-KNIGHT")
@@ -51,7 +51,7 @@ internal class AiTest {
   @Test
   fun `can build archer barracks`() {
     // when
-    val out = playTurn(Action.BuildArchery(116), Training.None)
+    val out = playTurn(QueenAction.BuildArchery(116), TrainingAction.None)
 
     // then
     assertThat(out[0]).isEqualTo("BUILD 116 BARRACKS-ARCHER")
@@ -61,7 +61,7 @@ internal class AiTest {
   @Test
   fun `can train at 3 sites`() {
     // when
-    val out = playTurn(Action.Wait, Training.AtLocation(1, 10, 116))
+    val out = playTurn(QueenAction.Wait, TrainingAction.AtLocation(1, 10, 116))
 
     // then
     assertThat(out[0]).isEqualTo("WAIT")
@@ -71,7 +71,7 @@ internal class AiTest {
   @Test
   fun `can do nothing`() {
     // when
-    val out = playTurn(Action.Wait, Training.None)
+    val out = playTurn(QueenAction.Wait, TrainingAction.None)
 
     // then
     assertThat(out[0]).isEqualTo("WAIT")

@@ -197,20 +197,18 @@ data class Soldier(
     get() = owner == FRIENDLY_OWNER
 }
 
-sealed class Action(val command: String) {
-  object Wait : Action("WAIT")
-  data class Move(val position: Position) : Action("MOVE ${position.x} ${position.y}") {
+sealed class QueenAction(val command: String) {
+  object Wait : QueenAction("WAIT")
+  data class Move(val position: Position) : QueenAction("MOVE ${position.x} ${position.y}") {
     constructor(x: Int, y: Int) : this(Position(x, y))
   }
 
-  data class BuildStable(val siteId: Int) :
-    Action("BUILD $siteId BARRACKS-KNIGHT")
+  data class BuildStable(val siteId: Int) : QueenAction("BUILD $siteId BARRACKS-KNIGHT")
+  data class BuildArchery(val siteId: Int) : QueenAction("BUILD $siteId BARRACKS-ARCHER")
+  data class BuildPhlegra(val siteId: Int) : QueenAction("BUILD $siteId BARRACKS-GIANT")
 
-  data class BuildArchery(val siteId: Int) : Action("BUILD $siteId BARRACKS-ARCHER")
-
-  data class BuildTower(val siteId: Int) : Action("BUILD $siteId TOWER")
-
-  data class BuildMine(val siteId: Int) : Action("BUILD $siteId MINE")
+  data class BuildTower(val siteId: Int) : QueenAction("BUILD $siteId TOWER")
+  data class BuildMine(val siteId: Int) : QueenAction("BUILD $siteId MINE")
 }
 
 data class Position(val x: Int, val y: Int) {
@@ -227,10 +225,10 @@ data class Position(val x: Int, val y: Int) {
   }
 }
 
-sealed class Training(val command: String) {
-  object None : Training("TRAIN")
+sealed class TrainingAction(val command: String) {
+  object None : TrainingAction("TRAIN")
   class AtLocation(locationIds: List<Int>) :
-    Training("TRAIN " + locationIds.joinToString(" ") { it.toString() }) {
+    TrainingAction("TRAIN " + locationIds.joinToString(" ") { it.toString() }) {
     constructor(
       locationId: Int,
       vararg moreLocationIds: Int
@@ -323,8 +321,17 @@ data class Battlefield(
   }
 }
 
-fun playTurn(action: Action, train: Training): List<String> {
-  val out = listOf(action.command, train.command)
+class Decision(val action: QueenAction, val train: TrainingAction)
+
+class Turn(
+  val battlefield: Battlefield,
+  val output: Decision
+)
+
+val turns = mutableListOf<Turn>()
+
+fun playTurn(decision: Decision): List<String> {
+  val out = listOf(decision.action.command, decision.train.command)
 
   out.forEach { println(it) }
 
@@ -492,7 +499,6 @@ fun main(args: Array<String>) {
     MapSite(siteId, Position(x, y), radius)
   }
 
-  val turns = mutableListOf<Battlefield>()
   val memory = Memory()
 
   // game loop
@@ -506,28 +512,29 @@ fun main(args: Array<String>) {
 
     // FIXME: ugly: memory is mutable and global to all turns
     val battlefield = Battlefield(memory, mapSites, gold, TouchedSite(touchedSite), sites, units)
+
+    val decision = thinkVeryHard(turns, battlefield)
+
+    playTurn(decision)
+
     // remember past states
-    turns.add(battlefield)
-
-    val commands = thinkVeryHard(turns, battlefield)
-
-    playTurn(commands.first, commands.second)
+    turns.add(Turn(battlefield, decision))
   }
 }
 
 
 interface QueenStrategy {
   fun getAction(
-    turns: MutableList<Battlefield>,
+    turns: List<Turn>,
     battlefield: Battlefield
-  ): Action
+  ): QueenAction
 }
 
 interface TrainingStrategy {
   fun getTraining(
-    turns: MutableList<Battlefield>,
+    turns: List<Turn>,
     battlefield: Battlefield
-  ): Training
+  ): TrainingAction
 }
 
 interface Strategy {
@@ -535,41 +542,41 @@ interface Strategy {
   val training: TrainingStrategy
 
   fun result(
-    turns: MutableList<Battlefield>,
+    turns: List<Turn>,
     battlefield: Battlefield
-  ): Pair<Action, Training>
+  ): Decision
 }
 
 class StrategyComposer(
   override val queen: QueenStrategy,
   override val training: TrainingStrategy
-
-
 ) : Strategy {
   override fun result(
-    turns: MutableList<Battlefield>,
+    turns: List<Turn>,
     battlefield: Battlefield
-  ) =
-    queen.getAction(turns, battlefield) to training.getTraining(turns, battlefield)
+  ) = Decision(
+    queen.getAction(turns, battlefield),
+    training.getTraining(turns, battlefield)
+  )
 }
 
 // QUEEN STRATEGIES
 
 object TakeNextEmptySite : QueenStrategy {
   override fun getAction(
-    turns: MutableList<Battlefield>,
+    turns: List<Turn>,
     battlefield: Battlefield
-  ): Action {
+  ): QueenAction {
     val queen = battlefield.friendlyQueen
 
     // take empty site if next to it
     return if (battlefield.touchedSite.touches && battlefield.touchedSiteAsSite.isEmpty) {
       if (battlefield.sites.friendly.barracks.count() % 2 == 0) {
         battlefield.memory.setStable(battlefield.touchedSite.siteId)
-        Action.BuildStable(battlefield.touchedSite.siteId)
+        QueenAction.BuildStable(battlefield.touchedSite.siteId)
       } else {
         battlefield.memory.setArchery(battlefield.touchedSite.siteId)
-        Action.BuildArchery(battlefield.touchedSite.siteId)
+        QueenAction.BuildArchery(battlefield.touchedSite.siteId)
       }
     } else {
       // get the nearest unowned site
@@ -581,10 +588,10 @@ object TakeNextEmptySite : QueenStrategy {
       debug("Nearest empty site $nearestSite")
 
       if (nearestSite != null) {
-        Action.Move(nearestSite)
+        QueenAction.Move(nearestSite)
       } else {
         // return to starting location for safety
-        Action.Move(turns.first().friendlyQueen.position)
+        QueenAction.Move(turns.first().battlefield.friendlyQueen.position)
       }
     }
   }
@@ -595,16 +602,16 @@ object TakeNextEmptySite : QueenStrategy {
  */
 object Fallback : QueenStrategy {
   override fun getAction(
-    turns: MutableList<Battlefield>,
+    turns: List<Turn>,
     battlefield: Battlefield
-  ): Action {
-    return Action.Move(turns.first().friendlyQueen.position)
+  ): QueenAction {
+    return QueenAction.Move(turns.first().battlefield.friendlyQueen.position)
   }
 }
 
 object TakeThenFallback : QueenStrategy {
-  override fun getAction(turns: MutableList<Battlefield>, battlefield: Battlefield): Action {
-    return if (battlefield.friendlyQueen.health < turns.first().friendlyQueen.health / 2) {
+  override fun getAction(turns: List<Turn>, battlefield: Battlefield): QueenAction {
+    return if (battlefield.friendlyQueen.health < turns.first().battlefield.friendlyQueen.health / 2) {
       Fallback.getAction(turns, battlefield)
     } else {
       TakeNextEmptySite.getAction(turns, battlefield)
@@ -615,40 +622,46 @@ object TakeThenFallback : QueenStrategy {
 // BUILDING STRATEGIES
 
 object BuildKnights : TrainingStrategy {
-  override fun getTraining(turns: MutableList<Battlefield>, battlefield: Battlefield): Training {
+  override fun getTraining(
+    turns: List<Turn>,
+    battlefield: Battlefield
+  ): TrainingAction {
     // try to find barracks with that type of unit
     val barracksClosestToEnemyQueen = battlefield.sites.friendly.stables.minBy {
       it.mapSite.position.distanceTo(battlefield.enemyQueen.position)
     }?.siteId
 
     return if (barracksClosestToEnemyQueen != null) {
-      Training.AtLocation(barracksClosestToEnemyQueen)
+      TrainingAction.AtLocation(barracksClosestToEnemyQueen)
     } else {
-      Training.None
+      TrainingAction.None
     }
   }
 }
 
 object BuildArchers : TrainingStrategy {
-  override fun getTraining(turns: MutableList<Battlefield>, battlefield: Battlefield): Training {
+  override fun getTraining(
+    turns: List<Turn>,
+    battlefield: Battlefield
+  ): TrainingAction {
     // try to find barracks with that type of unit
     val barracksClosestToFriendlyQueen = battlefield.sites.friendly.archeries.minBy {
       it.mapSite.position.distanceTo(battlefield.friendlyQueen.position)
     }?.siteId
 
     return if (barracksClosestToFriendlyQueen != null) {
-      Training.AtLocation(barracksClosestToFriendlyQueen)
+      TrainingAction.AtLocation(barracksClosestToFriendlyQueen)
     } else {
-      Training.None
+      TrainingAction.None
     }
   }
 }
 
 class BalancedTrainingStrategy(val maxKnightToArcherRatio: Float) : TrainingStrategy {
   override fun getTraining(
-    turns: MutableList<Battlefield>,
+    turns: List<Turn>,
     battlefield: Battlefield
-  ): Training {
+  ): TrainingAction {
     // try to balance archers and knights when possible
     val knightCount = battlefield.friendlyKnights.size
     val archerCount = battlefield.friendlyArchers.size
@@ -670,8 +683,8 @@ val strategy = StrategyComposer(
 )
 
 fun thinkVeryHard(
-  turns: MutableList<Battlefield>,
+  turns: MutableList<Turn>,
   battlefield: Battlefield
-): Pair<Action, Training> {
+): Decision {
   return strategy.result(turns, battlefield)
 }
