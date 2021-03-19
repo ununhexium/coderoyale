@@ -172,7 +172,7 @@ data class Sites(
   val friendly: ParsedSites,
   val enemy: ParsedSites
 ) {
-  val all = friendly.allOwned + enemy.allOwned
+  val all = friendly.allOwned + enemy.allOwned + emptySites
 }
 
 data class Soldier(
@@ -325,7 +325,7 @@ class Decision(val action: QueenAction, val train: TrainingAction)
 
 class Turn(
   val battlefield: Battlefield,
-  val output: Decision
+  val decision: Decision
 )
 
 val turns = mutableListOf<Turn>()
@@ -358,7 +358,7 @@ fun parseSites(mapSites: List<MapSite>, numSites: Int, input: Scanner): Sites {
 
   val ownedSites = listOf(ParsingSites(), ParsingSites()) // 0: friendly 1:enemy
 
-  (0 until numSites).forEach {
+  (0 until numSites).forEach { _ ->
     val siteId = input.nextInt()
     val gold = input.nextInt()
     val maxMineSize = input.nextInt()
@@ -611,7 +611,8 @@ object Fallback : QueenStrategy {
 
 object TakeThenFallback : QueenStrategy {
   override fun getAction(turns: List<Turn>, battlefield: Battlefield): QueenAction {
-    return if (battlefield.friendlyQueen.health < turns.first().battlefield.friendlyQueen.health / 2) {
+    val firstBattlefield = turns.firstOrNull()?.battlefield ?: battlefield
+    return if (battlefield.friendlyQueen.health < firstBattlefield.friendlyQueen.health / 2) {
       Fallback.getAction(turns, battlefield)
     } else {
       TakeNextEmptySite.getAction(turns, battlefield)
