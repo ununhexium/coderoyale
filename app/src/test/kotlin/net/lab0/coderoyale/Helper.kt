@@ -4,7 +4,6 @@ import Battlefield
 import Decision
 import ENEMY_OWNER
 import FRIENDLY_OWNER
-import FixedMeta
 import Game
 import History
 import MAX_HEIGHT
@@ -12,6 +11,7 @@ import MAX_WIDTH
 import MapSite
 import MetaStrategy
 import PlayerSites
+import PlayerSoldiers
 import Position
 import QUEEN_START_HP
 import QUEEN_TYPE
@@ -19,6 +19,7 @@ import QueenAction
 import Site
 import Sites
 import Soldier
+import Soldiers
 import StaticMeta
 import Strategy
 import TouchedSite
@@ -26,67 +27,134 @@ import TrainingAction
 import Turn
 
 
-fun buildPlayerSite(builder: PlayerSitesBuilder.() -> Unit): PlayerSites {
+fun buildPlayerSite(builder: (PlayerSitesBuilder) -> Unit): PlayerSites {
   val b = PlayerSitesBuilder()
   builder(b)
   return b.build()
 }
 
 class PlayerSitesBuilder {
-  private val goldMines = mutableListOf<Site.GoldMine>()
-  private val towers = mutableListOf<Site.Tower>()
-  private val stables = mutableListOf<Site.Barracks>()
-  private val archeries = mutableListOf<Site.Barracks>()
-  private val phlegra = mutableListOf<Site.Barracks>()
+  private var goldMines = mutableListOf<Site.GoldMine>()
+  private var towers = mutableListOf<Site.Tower>()
+  private var stables = mutableListOf<Site.Barracks>()
+  private var archeries = mutableListOf<Site.Barracks>()
+  private var phlegra = mutableListOf<Site.Barracks>()
 
   fun build(): PlayerSites {
     return PlayerSites(goldMines, towers, stables, archeries, phlegra)
   }
+
+  fun goldMines(goldMines: List<Site.GoldMine>) {
+    this.goldMines = goldMines.toMutableList()
+  }
+
+  fun towers(towers: List<Site.Tower>) {
+    this.towers = towers.toMutableList()
+  }
+
+  fun stables(stables: List<Site.Barracks>) {
+    this.stables = stables.toMutableList()
+  }
+
+  fun archeries(archeries: List<Site.Barracks>) {
+    this.archeries = archeries.toMutableList()
+  }
+
+  fun phlegra(phlegra: List<Site.Barracks>) {
+    this.phlegra = phlegra.toMutableList()
+  }
 }
 
-fun buildSites(builder: SitesBuilder.() -> Unit): Sites {
+fun buildSites(builder: (SitesBuilder) -> Unit): Sites {
   val b = SitesBuilder()
   builder(b)
   return b.build()
 }
 
 class SitesBuilder {
-  private val emptySites = mutableListOf<Site.Empty>()
-  private val friendlySites: PlayerSites = buildPlayerSite { }
-  private val enemySites: PlayerSites = buildPlayerSite { }
+  private var emptySites = mutableListOf<Site.Empty>()
+  private var friendlySites: PlayerSites = buildPlayerSite { }
+  private var enemySites: PlayerSites = buildPlayerSite { }
 
   fun build(): Sites {
     return Sites(emptySites, friendlySites, enemySites)
   }
+
+  fun friendlySites(builder: (PlayerSitesBuilder) -> Unit) {
+    this.friendlySites = buildPlayerSite(builder)
+  }
 }
 
+fun buildPlayerSoldiers(builder: (PlayerSoldiersBuilder) -> Unit): PlayerSoldiers {
+  val b = PlayerSoldiersBuilder()
+  builder(b)
+  return b.build()
+}
 
-fun buildBattlefield(builder: BattlefieldBuilder.() -> Unit): Battlefield {
+// TODO: ensure consistent owners
+class PlayerSoldiersBuilder {
+  var queen: Soldier.Queen =
+    Soldier.Queen(Position(0, 0), FRIENDLY_OWNER, QUEEN_TYPE, QUEEN_START_HP)
+
+  val knights = mutableListOf<Soldier.Knight>()
+  val archers = mutableListOf<Soldier.Archer>()
+  val giants = mutableListOf<Soldier.Giant>()
+
+  fun build(): PlayerSoldiers {
+    return PlayerSoldiers(queen, knights, archers, giants)
+  }
+}
+
+fun buildSoldiers(builder: (SoldiersBuilder) -> Unit): Soldiers {
+  val b = SoldiersBuilder()
+  builder(b)
+  return b.build()
+}
+
+class SoldiersBuilder {
+  var friendly: PlayerSoldiers = buildPlayerSoldiers { }
+  var enemy: PlayerSoldiers = buildPlayerSoldiers { }
+
+  fun build(): Soldiers {
+    return Soldiers(friendly, enemy)
+  }
+}
+
+fun buildBattlefield(builder: (BattlefieldBuilder) -> Unit): Battlefield {
   val b = BattlefieldBuilder()
   builder(b)
   return b.build()
 }
 
 class BattlefieldBuilder {
-  private var mapSites = mutableListOf<MapSite>()
-  private var gold = 0
-  private var touchedSite = TouchedSite(-1) // should be auto computed
-  private var sites = buildSites { }
-  private var units = mutableListOf<Soldier>(
-    Soldier(Position(0, 0), FRIENDLY_OWNER, QUEEN_TYPE, QUEEN_START_HP),
-    Soldier(Position(MAX_WIDTH, MAX_HEIGHT), ENEMY_OWNER, QUEEN_TYPE, QUEEN_START_HP)
-  )
+  // must sync map sites and sites
+  var gold = 0
+    private set
+
+  var touchedSite = TouchedSite(-1)
+    private set
+
+  var sites = buildSites { }
+    private set
+
+  var units = buildSoldiers { }
+    private set
+
 
   fun build(): Battlefield {
-    return Battlefield(mapSites, gold, touchedSite, sites, units)
+    return Battlefield(gold, touchedSite, sites, units)
   }
 
   fun gold(amount: Int) {
     this.gold = amount
   }
+
+  fun sites(builder: (SitesBuilder) -> Unit) {
+    this.sites = buildSites(builder)
+  }
 }
 
-fun buildStrategy(builder: StrategyBuilder.() -> Unit): Strategy {
+fun buildStrategy(builder: (StrategyBuilder) -> Unit): Strategy {
   val b = StrategyBuilder()
   builder(b)
   return b.build()
@@ -103,12 +171,12 @@ class StrategyBuilder {
     return SimpleStrategy(decision)
   }
 
-  fun decision(builder: DecisionBuilder.() -> Unit) {
+  fun decision(builder: (DecisionBuilder) -> Unit) {
     decision = buildDecision(builder)
   }
 }
 
-fun buildDecision(builder: DecisionBuilder.() -> Unit): Decision {
+fun buildDecision(builder: (DecisionBuilder) -> Unit): Decision {
   val b = DecisionBuilder()
   builder(b)
   return b.build()
@@ -131,7 +199,7 @@ class DecisionBuilder {
   }
 }
 
-fun buildTurn(builder: TurnBuilder.() -> Unit): Turn {
+fun buildTurn(builder: (TurnBuilder) -> Unit): Turn {
   val b = TurnBuilder()
   builder(b)
   return b.build()
@@ -146,12 +214,12 @@ class TurnBuilder {
     return Turn(battlefield, strategy, decision)
   }
 
-  fun battlefield(builder: BattlefieldBuilder.() -> Unit) {
+  fun battlefield(builder: (BattlefieldBuilder) -> Unit) {
     battlefield = buildBattlefield(builder)
   }
 }
 
-fun buildHistory(builder: HistoryBuilder.() -> Unit): History {
+fun buildHistory(builder: (HistoryBuilder) -> Unit): History {
   val b = HistoryBuilder()
   builder(b)
   return b.build()
@@ -164,36 +232,50 @@ class HistoryBuilder {
     return History(turns)
   }
 
-  fun addTurn(function: TurnBuilder.() -> Unit) {
+  fun addTurn(function: (TurnBuilder) -> Unit) {
     turns.add(buildTurn(function))
   }
 }
 
-fun buildGame(builder: GameBuilder.() -> Unit): Game {
+fun buildGame(builder: (GameBuilder) -> Unit): Game {
   val b = GameBuilder()
   builder(b)
   return b.build()
 }
 
 class GameBuilder {
-  private var metaStrategy: MetaStrategy = StaticMeta
-  private var history: History = buildHistory { }
-  private var currentStrategy: Strategy = Strategy.NoOp
-  private var battlefield: Battlefield = buildBattlefield { }
+  var mapSites = mutableListOf<MapSite>()
+    private set
+  var metaStrategy: MetaStrategy = StaticMeta
+    private set
 
-  fun build(): Game {
-    return Game(metaStrategy, history, currentStrategy, battlefield)
+  var history: History = buildHistory { }
+    private set
+
+  var currentStrategy: Strategy = Strategy.NoOp
+    private set
+
+  var battlefield: Battlefield = buildBattlefield { }
+    private set
+
+  fun mapSites(mapSites: List<MapSite>) {
+    this.mapSites = mapSites.toMutableList()
   }
 
-  fun history(builder: HistoryBuilder.() -> Unit) {
+  fun build(): Game {
+    return Game(mapSites, metaStrategy, history, currentStrategy, battlefield)
+  }
+
+  fun history(builder: (HistoryBuilder) -> Unit) {
     history = buildHistory(builder)
   }
 
-  fun strategy(builder: StrategyBuilder.() -> Unit) {
+  fun strategy(builder: (StrategyBuilder) -> Unit) {
     currentStrategy = buildStrategy(builder)
   }
 
-  fun battlefield(builder: BattlefieldBuilder.() -> Unit) {
+  fun battlefield(builder: (BattlefieldBuilder) -> Unit) {
     battlefield = buildBattlefield(builder)
   }
 }
+

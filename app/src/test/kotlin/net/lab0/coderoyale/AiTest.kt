@@ -1,7 +1,6 @@
 package net.lab0.coderoyale
 
 import QueenAction
-import Decision
 import TrainingAction
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -23,9 +22,9 @@ internal class AiTest {
   fun `can move`() {
     // when
     val game = buildGame {
-      strategy {
-        decision {
-          intent(QueenAction.Move(12, 116))
+      it.strategy {
+        it.decision {
+          it.intent(QueenAction.Move(12, 116))
         }
       }
     }
@@ -41,9 +40,9 @@ internal class AiTest {
   fun `can build knights barracks`() {
     // when
     val game = buildGame {
-      strategy {
-        decision {
-          intent(QueenAction.BuildStable(116))
+      it.strategy {
+        it.decision {
+          it.intent(QueenAction.BuildStable(116))
         }
       }
     }
@@ -59,9 +58,9 @@ internal class AiTest {
   fun `can build archer barracks`() {
     // when
     val game = buildGame {
-      strategy {
-        decision {
-          intent(QueenAction.BuildArchery(116))
+      it.strategy {
+        it.decision {
+          it.intent(QueenAction.BuildArchery(116))
         }
       }
     }
@@ -77,9 +76,9 @@ internal class AiTest {
   fun `can train at 3 sites`() {
     // when
     val game = buildGame {
-      strategy {
-        decision {
-          training(TrainingAction.AtLocation(1, 10, 116))
+      it.strategy {
+        it.decision {
+          it.training(TrainingAction.AtLocation(1, 10, 116))
         }
       }
     }
