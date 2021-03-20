@@ -16,6 +16,17 @@ import kotlin.math.sqrt
  * strategies start at the STRATEGIES comment
  */
 
+/**
+
+Ignored rules
+
+If both Queens try simultaneously to build a structure on the same building site, then only one will be built:
+
+On even-numbered turns (this includes the first turn: turn 0), player 2 gets to build
+On odd-numbered turns, player 1 gets to build
+
+ */
+
 fun debug(any: Any?) {
   System.err.println(any.toString())
 }
@@ -26,21 +37,66 @@ fun debug(any: Any?) {
 
 object Const {
 
-  // battlefield
+  object Battlefield {
+    const val MIN_WIDTH = 0
+    const val MAX_WIDTH = 1920
+    const val MIN_HEIGHT = 0
+    const val MAX_HEIGHT = 1000
+  }
 
-  const val MAX_WIDTH = 1920
-  const val MAX_HEIGHT = 1000
-
-  // mining
-
-  const val MAX_GOLD_MINE_RATE = 5
 
   // sites
 
-  const val EMPTY_STRUCTURE_TYPE = -1
-  const val GOLD_MINE_TYPE = 0
-  const val TOWER_TYPE = 1
-  const val BARRACKS_TYPE = 2
+  object Sites {
+    const val MIN_RADIUS = 60
+    const val MAX_RADIUS = 110
+
+    /**
+     * Sites whose center is located within 500 units of the map's center are given
+     * a bonus of 50 gold and +1 to maximum mining rate.
+     *
+     * Sites whose center is located within 200 units of the map's center are given
+     * a further bonus of 50 gold and +1 to maximum mining rate.
+     */
+    const val FIRST_BONUS_RADIUS = 500
+    const val SECOND_BONUS_RADIUS = 200
+
+
+    const val EMPTY_STRUCTURE_TYPE = -1
+
+    object Mine {
+      const val TYPE = 0
+
+      const val MIN_GOLD_MINE_RATE = 1
+      const val MAX_GOLD_MINE_RATE = 5 // 3 +1 +1 (2 bonuses for closer to the center)
+    }
+
+    object Tower {
+      const val TYPE = 1
+      /**
+       * Each tower has a number of HP (param1) that determines its effective attack radius (param2).
+       * Each HP allows the tower to cover 1000 square-units (a square unit is not very much!),
+       * not including the area of the site on which it sits.
+       */
+      const val AREA_PER_HP = 1000
+
+      /**
+       * When an existing tower is grown, it receives 100 additional HP.
+       */
+      const val HP_PER_GROW = 100
+
+      const val MAX_HP = 800
+
+      /**
+       * A Queen can slightly outpace a single GIANT by building at the same time. (+100 VS -80)
+       */
+      const val TOWER_HP_DECAY = 4
+    }
+
+    object Barracks {
+      const val TYPE = 2
+    }
+  }
 
   // sites and units
 
@@ -50,25 +106,87 @@ object Const {
 
   // units
 
-  const val QUEEN_TYPE = -1
-  const val KNIGHT_TYPE = 0
-  const val ARCHER_TYPE = 1
-  const val GIANT_TYPE = 2
+  object Units {
 
-  const val KNIGHT_COST = 80
-  const val ARCHER_COST = 100
-  const val GIANT_COST = 140
+    const val CREEP_DECAY_RATE = 1
 
-  const val KNIGHT_GROUP_SIZE = 4
-  const val ARCHER_GROUP_SIZE = 2
-  const val GIANT_GROUP_SIZE = 1
+    object QueenData : UnitData {
+      override val type = -1
+      override val speed = 60
 
-  const val QUEEN_RADIUS = 30
-  const val QUEEN_SPEED = 60
-  const val QUEEN_START_HP = 100
+      /**
+       * Doc says 200, game says 90 🤷
+       */
+      override val hp = 90
+      override val radius = 30
+    }
 
-  const val CREEP_DECAY_RATE = 1
+    object KnightData : BuildableUnitData {
+      override val cost = 80
+      override val number = 4
+      override val range = 0
+      override val trainingTime = 5
+
+      override val type = 0
+      override val speed = 100
+      override val hp = 25
+      override val radius = 20
+
+      val queenDamage = 1
+    }
+
+    object ArcherData : BuildableUnitData {
+      override val cost = 100
+      override val number = 2
+      override val range = 200
+      override val trainingTime = 8
+
+      override val type = 1
+      override val speed = 75
+      override val hp = 45
+      override val radius = 25
+
+      val giantDamage = 10
+      val creepDamage = 2
+    }
+
+    object GiantData : BuildableUnitData {
+      override val cost = 140
+      override val number = 1
+      override val range = 0
+      override val trainingTime = 10
+
+      override val type = 2
+      override val speed = 50
+      override val hp = 200
+      override val radius = 40
+
+      val towerDamage = 80
+    }
+  }
 }
+
+interface UnitData {
+  val type: Int
+  val speed: Int
+  val hp: Int
+  val radius: Int
+}
+
+interface BuildableUnitData : UnitData {
+  val cost: Int
+
+  /**
+   * Produced amount for 1 batch of production
+   */
+  val number: Int
+  val range: Int
+  val trainingTime: Int
+}
+
+/////////////////////
+// Game Structures //
+/////////////////////
 
 inline class TouchedSite(val siteId: Int) {
   val touches: Boolean
@@ -89,10 +207,10 @@ sealed class Site(
 ) {
 
   // structure type
-  val isEmpty: Boolean = structureType == Const.EMPTY_STRUCTURE_TYPE
-  val isGoldMine: Boolean = structureType == Const.GOLD_MINE_TYPE
-  val isTower: Boolean = structureType == Const.TOWER_TYPE
-  val isBarracks: Boolean = structureType == Const.BARRACKS_TYPE
+  val isEmpty: Boolean = structureType == Const.Sites.EMPTY_STRUCTURE_TYPE
+  val isGoldMine: Boolean = structureType == Const.Sites.Mine.TYPE
+  val isTower: Boolean = structureType == Const.Sites.Tower.TYPE
+  val isBarracks: Boolean = structureType == Const.Sites.Barracks.TYPE
 
   // owner
   val isFriendly: Boolean = owner == Const.FRIENDLY_OWNER
@@ -138,6 +256,15 @@ sealed class Site(
 
     /**
      * the attack radius measured from its center
+     *
+     * The attack radius is calculated every turn according to the tower's HP
+     * according to the formula: attackRadius = sqrt((hp * 1000 + siteArea) / PI) --
+     * this is measured from the site's center.
+     *
+     * This is so that PI * attackRadius^2 = hp * 1000 + siteArea.
+     *
+     * When a tower is first built, it receives 200 HP.
+     * This corresponds to a variable attack range: longer attack range for a smaller radius site.
      */
     val attackRadius = param2
   }
@@ -220,6 +347,17 @@ sealed class Soldier(
 
   class Giant(position: Position, owner: Int, unitType: Int, health: Int) :
     Soldier(position, owner, unitType, health)
+
+  val radius = when (unitType) {
+    Const.Units.QueenData.type -> Const.Units.QueenData.radius
+    Const.Units.KnightData.type -> Const.Units.KnightData.radius
+    Const.Units.ArcherData.type -> Const.Units.ArcherData.radius
+    Const.Units.GiantData.type -> Const.Units.GiantData.radius
+    else -> throw  IllegalStateException("What is a unit with type $unitType?")
+  }
+
+  fun isTouching(other: Soldier) =
+    this.position.distanceTo(other.position) - this.radius - other.radius < 5
 }
 
 data class PlayerSoldiers(
@@ -310,9 +448,9 @@ data class Battlefield(
 ) {
 
   // gold
-  val canBuildKnight: Boolean = gold >= Const.KNIGHT_COST
-  val canBuildArcher: Boolean = gold >= Const.ARCHER_COST
-  val canBuildGiant: Boolean = gold >= Const.GIANT_COST
+  val canBuildKnight: Boolean = gold >= Const.Units.KnightData.cost
+  val canBuildArcher: Boolean = gold >= Const.Units.ArcherData.cost
+  val canBuildGiant: Boolean = gold >= Const.Units.GiantData.cost
 
   /**
    * Friendly gold mines rate
@@ -344,14 +482,14 @@ data class Battlefield(
 // STRATEGIES //
 ////////////////
 
-interface Strategy<S> where S:Any? {
+interface Strategy<S> where S : Any? {
   val done: Boolean
     get() = false
 
   fun play(game: Game): S?
 }
 
-interface FallbackStrategy<S>: Strategy<S> where S:Any {
+interface FallbackStrategy<S> : Strategy<S> where S : Any {
   override fun play(game: Game): S
 }
 
@@ -466,7 +604,7 @@ class Game(
 
     val decision = currentStrategy.play(this) ?: Decision.NoOp
 
-    if(decision == Decision.NoOp) debug("WW: used fallback noop")
+    if (decision == Decision.NoOp) debug("WW: used fallback noop")
 
     out = listOf(decision.intent.command, decision.training.command)
 
@@ -541,7 +679,7 @@ fun parseSites(mapSites: List<MapSite>, numSites: Int, input: Scanner): Sites {
 
     when (structureType) {
 
-      Const.EMPTY_STRUCTURE_TYPE -> {
+      Const.Sites.EMPTY_STRUCTURE_TYPE -> {
         val empty = Site.Empty(
           mapSites.first { it.id == siteId },
           gold,
@@ -554,7 +692,7 @@ fun parseSites(mapSites: List<MapSite>, numSites: Int, input: Scanner): Sites {
         emptySites.add(empty)
       }
 
-      Const.GOLD_MINE_TYPE -> {
+      Const.Sites.Mine.TYPE -> {
         val mine = Site.GoldMine(
           mapSites.first { it.id == siteId },
           gold,
@@ -568,7 +706,7 @@ fun parseSites(mapSites: List<MapSite>, numSites: Int, input: Scanner): Sites {
         ownedSites[owner].goldMines.add(mine)
       }
 
-      Const.TOWER_TYPE -> {
+      Const.Sites.Tower.TYPE -> {
         val tower = Site.Tower(
           mapSites.first { it.id == siteId },
           gold,
@@ -582,7 +720,7 @@ fun parseSites(mapSites: List<MapSite>, numSites: Int, input: Scanner): Sites {
         ownedSites[owner].towers.add(tower)
       }
 
-      Const.BARRACKS_TYPE -> {
+      Const.Sites.Barracks.TYPE -> {
         val barracks = Site.Barracks(
           mapSites.first { it.id == siteId },
           gold,
@@ -594,15 +732,15 @@ fun parseSites(mapSites: List<MapSite>, numSites: Int, input: Scanner): Sites {
         )
 
         when (param2) {
-          Const.KNIGHT_TYPE -> {
+          Const.Units.KnightData.type -> {
             ownedSites[owner].stables.add(barracks)
           }
 
-          Const.ARCHER_TYPE -> {
+          Const.Units.ArcherData.type -> {
             ownedSites[owner].archeries.add(barracks)
           }
 
-          Const.GIANT_TYPE -> {
+          Const.Units.GiantData.type -> {
             ownedSites[owner].phlegra.add(barracks)
           }
         }
@@ -635,16 +773,16 @@ private fun parseUnits(
     val soldierGroup = parsing[owner]
 
     when (unitType) {
-      Const.QUEEN_TYPE -> {
+      Const.Units.QueenData.type -> {
         soldierGroup.queen = Soldier.Queen(Position(x, y), owner, unitType, health)
       }
-      Const.KNIGHT_TYPE -> {
+      Const.Units.KnightData.type -> {
         soldierGroup.knights.add(Soldier.Knight(Position(x, y), owner, unitType, health))
       }
-      Const.ARCHER_TYPE -> {
+      Const.Units.ArcherData.type -> {
         soldierGroup.archers.add(Soldier.Archer(Position(x, y), owner, unitType, health))
       }
-      Const.GIANT_TYPE -> {
+      Const.Units.GiantData.type -> {
         soldierGroup.giants.add(Soldier.Giant(Position(x, y), owner, unitType, health))
       }
       else -> throw IllegalStateException("No unit type like $unitType")

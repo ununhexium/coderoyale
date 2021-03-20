@@ -11,8 +11,7 @@ import MetaStrategy
 import PlayerSites
 import PlayerSoldiers
 import Position
-import Const.QUEEN_START_HP
-import Const.QUEEN_TYPE
+import Const.Units.QueenData
 import Output.Intent
 import Site
 import Sites
@@ -93,7 +92,7 @@ fun buildPlayerSoldiers(builder: (PlayerSoldiersBuilder) -> Unit): PlayerSoldier
 // TODO: ensure consistent owners
 class PlayerSoldiersBuilder {
   var queen: Soldier.Queen =
-    Soldier.Queen(Position(0, 0), FRIENDLY_OWNER, QUEEN_TYPE, QUEEN_START_HP)
+    Soldier.Queen(Position(0, 0), FRIENDLY_OWNER, QueenData.type, QueenData.hp)
 
   val knights = mutableListOf<Soldier.Knight>()
   val archers = mutableListOf<Soldier.Archer>()
