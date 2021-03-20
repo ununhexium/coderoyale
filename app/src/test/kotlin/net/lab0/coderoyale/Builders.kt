@@ -13,15 +13,16 @@ import PlayerSoldiers
 import Position
 import QUEEN_START_HP
 import QUEEN_TYPE
-import QueenAction
+import Output.Intent
 import Site
 import Sites
 import Soldier
 import Soldiers
 import StaticMeta
-import Strategy
+import GameStrategy
 import TouchedSite
-import TrainingAction
+import Output.TrainingAction
+import SimpleStrategy
 import Turn
 
 
@@ -42,23 +43,23 @@ class PlayerSitesBuilder {
     return PlayerSites(goldMines, towers, stables, archeries, phlegra)
   }
 
-  fun goldMines(goldMines: List<Site.GoldMine>) {
+  fun goldMines(vararg mines: Site.GoldMine) {
     this.goldMines = goldMines.toMutableList()
   }
 
-  fun towers(towers: List<Site.Tower>) {
+  fun towers(vararg towers: Site.Tower) {
     this.towers = towers.toMutableList()
   }
 
-  fun stables(stables: List<Site.Barracks>) {
+  fun stables(vararg stables: Site.Barracks) {
     this.stables = stables.toMutableList()
   }
 
-  fun archeries(archeries: List<Site.Barracks>) {
+  fun archeries(vararg archeries: Site.Barracks) {
     this.archeries = archeries.toMutableList()
   }
 
-  fun phlegra(phlegra: List<Site.Barracks>) {
+  fun phlegra(vararg phlegra: Site.Barracks) {
     this.phlegra = phlegra.toMutableList()
   }
 }
@@ -152,20 +153,16 @@ class BattlefieldBuilder {
   }
 }
 
-fun buildStrategy(builder: (StrategyBuilder) -> Unit): Strategy {
+fun buildStrategy(builder: (StrategyBuilder) -> Unit): GameStrategy {
   val b = StrategyBuilder()
   builder(b)
   return b.build()
 }
 
-class SimpleStrategy(val decision: Decision) : Strategy {
-  override fun result(game: Game) = decision
-}
-
 class StrategyBuilder {
   private var decision: Decision = Decision.NoOp
 
-  fun build(): Strategy {
+  fun build(): GameStrategy {
     return SimpleStrategy(decision)
   }
 
@@ -181,14 +178,14 @@ fun buildDecision(builder: (DecisionBuilder) -> Unit): Decision {
 }
 
 class DecisionBuilder {
-  private var intent: QueenAction = QueenAction.Wait
+  private var intent: Intent = Intent.Wait
   private var training: TrainingAction = TrainingAction.None
 
   fun build(): Decision {
     return Decision(intent, training)
   }
 
-  fun intent(intent: QueenAction) {
+  fun intent(intent: Intent) {
     this.intent = intent
   }
 
@@ -205,7 +202,7 @@ fun buildTurn(builder: (TurnBuilder) -> Unit): Turn {
 
 class TurnBuilder {
   private var battlefield: Battlefield = buildBattlefield { }
-  private var strategy: Strategy = Strategy.NoOp
+  private var strategy: GameStrategy = SimpleStrategy(Decision.NoOp)
   private var decision: Decision = buildDecision {}
 
   fun build(): Turn {
@@ -253,7 +250,7 @@ class GameBuilder {
   var history: History = buildHistory { }
     private set
 
-  var currentStrategy: Strategy = Strategy.NoOp
+  var currentStrategy: GameStrategy = SimpleStrategy(Decision.NoOp)
     private set
 
   var battlefield: Battlefield = buildBattlefield { }
