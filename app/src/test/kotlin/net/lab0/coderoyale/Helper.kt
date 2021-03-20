@@ -2,13 +2,11 @@ package net.lab0.coderoyale
 
 import Battlefield
 import Decision
-import ENEMY_OWNER
 import FRIENDLY_OWNER
 import Game
 import History
-import MAX_HEIGHT
-import MAX_WIDTH
 import MapSite
+import Memory
 import MetaStrategy
 import PlayerSites
 import PlayerSoldiers
@@ -249,6 +247,9 @@ class GameBuilder {
   var metaStrategy: MetaStrategy = StaticMeta
     private set
 
+  var memory: Memory = Memory()
+    private set
+
   var history: History = buildHistory { }
     private set
 
@@ -263,7 +264,7 @@ class GameBuilder {
   }
 
   fun build(): Game {
-    return Game(mapSites, metaStrategy, history, currentStrategy, battlefield)
+    return Game(mapSites, metaStrategy, memory, history, currentStrategy, battlefield)
   }
 
   fun history(builder: (HistoryBuilder) -> Unit) {

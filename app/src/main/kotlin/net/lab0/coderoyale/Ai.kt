@@ -1,3 +1,10 @@
+import QueenAction.BuildArchery
+import QueenAction.BuildMine
+import QueenAction.BuildStable
+import QueenAction.BuildTower
+import QueenAction.Companion.doAt
+import QueenAction.Move
+import QueenAction.Wait
 import java.util.*
 import kotlin.math.sqrt
 
@@ -188,6 +195,15 @@ data class Sites(
   val enemy: PlayerSites
 ) {
   val all = friendly.allOwned + enemy.allOwned + emptySites
+
+  /**
+   * Get the empty site
+   */
+  fun nearestEmptySite(position: Position): Site.Empty? {
+    return emptySites.minBy {
+      it.mapSite.position.distanceTo(position)
+    }
+  }
 }
 
 sealed class Soldier(
@@ -249,6 +265,8 @@ data class Soldiers(
   val friendly: PlayerSoldiers,
   val enemy: PlayerSoldiers
 ) {
+  val myQueen: Soldier.Queen = friendly.queen
+
   val all = friendly.all + enemy.all
 }
 
@@ -264,6 +282,15 @@ sealed class QueenAction(val command: String) {
 
   data class BuildTower(val siteId: Int) : QueenAction("BUILD $siteId TOWER")
   data class BuildMine(val siteId: Int) : QueenAction("BUILD $siteId MINE")
+
+  companion object {
+    /**
+     * Do action at the site or move there to do it
+     */
+    fun doAt(site: MapSite, touchedSite: TouchedSite, intent: QueenAction): QueenAction {
+      return if (touchedSite.siteId == site.siteId) intent else Move(site.position)
+    }
+  }
 }
 
 data class Position(val x: Int, val y: Int) {
@@ -303,6 +330,12 @@ data class Battlefield(
   val canBuildArcher: Boolean = gold >= ARCHER_COST
   val canBuildGiant: Boolean = gold >= GIANT_COST
 
+  /**
+   * Friendly gold mines rate
+   */
+  val goldMinesRate: Int
+    get() = sites.friendly.goldMines.sumBy { it.incomeRate }
+
   // sites
   val touchedSiteAsSite: Site
     get() = sites.all.first { it.mapSite.siteId == touchedSite.siteId }
@@ -311,7 +344,7 @@ data class Battlefield(
 
 interface QueenStrategy {
   object EMPTY : QueenStrategy {
-    override fun getAction(game: Game) = QueenAction.Wait
+    override fun getAction(game: Game) = Wait
   }
 
   fun getAction(game: Game): QueenAction
@@ -349,7 +382,7 @@ class Decision(
   val training: TrainingAction
 ) {
   companion object {
-    val NoOp = Decision(QueenAction.Wait, TrainingAction.None)
+    val NoOp = Decision(Wait, TrainingAction.None)
   }
 }
 
@@ -368,9 +401,26 @@ class History(private val _turns: MutableList<Turn> = mutableListOf()) {
     _turns.add(turn)
 }
 
+/**
+ * Warning: all mutable!
+ */
+class Memory(
+  private val _maxedGoldMines: MutableSet<Int> = mutableSetOf()
+) {
+  val maxedGoldMines: Set<Int>
+    get() = _maxedGoldMines
+
+  fun addMaxedGoldMine(siteId: Int) {
+    if (_maxedGoldMines.contains(siteId)) debug("WW Re-adding gold mine to maxed gold mines")
+
+    _maxedGoldMines.add(siteId)
+  }
+}
+
 class Game(
   val mapSites: List<MapSite>,
   private var internalMetaStrategy: MetaStrategy,
+  val memory: Memory = Memory(),
   val history: History = History(),
   private var currentStrategy: Strategy = Strategy.NoOp,
   battlefield: Battlefield? = null
@@ -390,9 +440,6 @@ class Game(
   val meta: MetaStrategy
     get() = internalMetaStrategy
 
-  val goldMineGains: Int
-    get() = battlefield.sites.friendly.goldMines.sumBy { it.incomeRate }
-
   val lastOutput
     get() = out
 
@@ -400,6 +447,8 @@ class Game(
   private var out: List<String> = listOf()
 
   fun playTurn(battlefield: Battlefield): List<String> {
+    postParsing()
+
     currentBattlefield = battlefield
     currentStrategy = meta.selectStrategy(this)
 
@@ -414,7 +463,52 @@ class Game(
     // for tests
     return out
   }
+
+  /**
+   * Computes things that can be infered from the parsed data
+   */
+  private fun postParsing() {
+    if (history.turns.isNotEmpty()) {
+      diffUpdate()
+    }
+  }
+
+  private fun diffUpdate() {
+    detectMaxedMines()
+  }
+
+  private fun detectMaxedMines() {
+    val lastTurn = history.turns.last()
+
+    val upgradedGoldMine = battlefield.sites.friendly.goldMines.filter {
+      it.mapSite.siteId !in memory.maxedGoldMines
+    }.mapNotNull {
+      // check that it's this type an continue processing it
+      lastTurn.decision.intent as? BuildMine
+    }.firstOrNull()
+
+    upgradedGoldMine?.let {
+      /*
+       * May be null if the mine was not built, like there is a command
+       *  issued from the wrong position, when not touching the site.
+       */
+      val previousMiningRate =
+        lastTurn.battlefield.sites.friendly.goldMines.withId(upgradedGoldMine.siteId)
+      val currentMiningRate =
+        battlefield.sites.friendly.goldMines.withId(upgradedGoldMine.siteId)
+
+      if (previousMiningRate != null && currentMiningRate != null) {
+        val increase = currentMiningRate.incomeRate - previousMiningRate.incomeRate
+        if (increase == 0) {
+          memory.addMaxedGoldMine(upgradedGoldMine.siteId)
+        }
+      }
+    }
+  }
 }
+
+private fun <T> List<T>.withId(siteId: Int) where T : Site =
+  this.firstOrNull { it.mapSite.siteId == siteId }
 
 
 fun parseSites(mapSites: List<MapSite>, numSites: Int, input: Scanner): Sites {
@@ -563,45 +657,6 @@ private fun parseUnits(
   )
 }
 
-fun main(args: Array<String>) {
-  val input = Scanner(System.`in`)
-  val numSites = input.nextInt()
-
-  val mapSites = (0 until numSites).map {
-    val siteId = input.nextInt()
-    val x = input.nextInt()
-    val y = input.nextInt()
-    val radius = input.nextInt()
-
-    MapSite(siteId, Position(x, y), radius)
-  }
-
-  val game = Game(
-    mapSites = mapSites,
-    internalMetaStrategy = FixedMeta(
-      CombinerStrategy(
-        TakeThenFallback,
-        BalancedTrainingStrategy(3f)
-      )
-    )
-  )
-
-  // game loop
-  while (true) {
-    val gold = input.nextInt()
-    val touchedSite = input.nextInt()
-
-    val sites = parseSites(mapSites, numSites, input)
-    val numUnits = input.nextInt()
-    val units = parseUnits(numUnits, input)
-
-    // FIXME: ugly: memory is mutable and global to all turns
-    val battlefield = Battlefield(gold, TouchedSite(touchedSite), sites, units)
-
-    game.playTurn(battlefield)
-  }
-}
-
 
 /**
  * STRATEGIES
@@ -644,9 +699,9 @@ object TakeNextEmptySite : QueenStrategy {
     // take empty site if next to it
     return if (battlefield.touchedSite.touches && battlefield.touchedSiteAsSite.isEmpty) {
       if (battlefield.sites.friendly.barracks.count() % 2 == 0) {
-        QueenAction.BuildStable(battlefield.touchedSite.siteId)
+        BuildStable(battlefield.touchedSite.siteId)
       } else {
-        QueenAction.BuildArchery(battlefield.touchedSite.siteId)
+        BuildArchery(battlefield.touchedSite.siteId)
       }
     } else {
       // get the nearest unowned site
@@ -658,10 +713,10 @@ object TakeNextEmptySite : QueenStrategy {
       debug("Nearest empty site $nearestSite")
 
       if (nearestSite != null) {
-        QueenAction.Move(nearestSite)
+        Move(nearestSite)
       } else {
         // return to starting location for safety
-        QueenAction.Move(
+        Move(
           history.turns.firstOrNull()?.let { it.battlefield.units.friendly.queen.position }
             ?: game.battlefield.units.friendly.queen.position // 1st turn case
         )
@@ -673,7 +728,7 @@ object TakeNextEmptySite : QueenStrategy {
 object FallbackToOrigin : QueenStrategy {
   override fun getAction(game: Game): QueenAction {
     val history = game.history
-    return QueenAction.Move(history.turns.first().battlefield.units.friendly.queen.position)
+    return Move(history.turns.first().battlefield.units.friendly.queen.position)
   }
 }
 
@@ -690,14 +745,83 @@ object TakeThenFallback : QueenStrategy {
   }
 }
 
-//class OutmineAndDefend(val goldIncomeTarget: Int) : QueenStrategy {
-//  override fun getAction(history: History, battlefield: Battlefield): QueenAction {
-//    // prio 1: get gold
-//    if (history.lastTurnGoldGain < goldIncomeTarget) {
-//      // TODO
-//    }
-//  }
-//}
+class OutmineAndDefend(val goldRateTarget: Int) : QueenStrategy {
+  override fun getAction(game: Game): QueenAction {
+    debug("prio 1: get gold")
+
+    val battlefield = game.battlefield
+
+    return if (battlefield.goldMinesRate < goldRateTarget) {
+      val existingGoldMine = battlefield.sites.friendly.goldMines.filter {
+        it.mapSite.siteId !in game.memory.maxedGoldMines
+      }.minBy {
+        it.mapSite.position.distanceTo(battlefield.units.friendly.queen.position)
+      }
+
+      val nearestEmptySite = battlefield.sites.nearestEmptySite(
+        battlefield.units.myQueen.position
+      )
+
+      val targetGoldMine = existingGoldMine ?: nearestEmptySite
+
+      when {
+        // no target -> implement fallback
+        targetGoldMine == null -> {
+          debug("No gold mine to build")
+          Wait
+        }
+
+        else -> doAt(
+          targetGoldMine.mapSite,
+          battlefield.touchedSite,
+          BuildMine(targetGoldMine.mapSite.siteId)
+        )
+      }
+    } else {
+      debug("prio 2 build")
+      // TODO prio 0: giants to kill towers
+      // 1. archers
+      if (battlefield.sites.friendly.archeries.isEmpty()) {
+        val nextArchery = battlefield.sites.nearestEmptySite(battlefield.units.myQueen.position)
+
+        if (nextArchery == null) {
+          debug("Found no site to build a new archery")
+          Wait
+        } else {
+          doAt(
+            nextArchery.mapSite,
+            battlefield.touchedSite,
+            BuildArchery(nextArchery.mapSite.siteId)
+          )
+        }
+      }
+      // 2. towers
+      else if (battlefield.sites.friendly.towers.isEmpty()) {
+        // TODO: improve tower location selection, choose in the middle?
+        val nextTower = battlefield.sites.nearestEmptySite(battlefield.units.myQueen.position)
+
+        if (nextTower == null) {
+          debug("Found no site to build a new tower")
+          Wait
+        } else {
+          doAt(nextTower.mapSite, battlefield.touchedSite, BuildTower(nextTower.mapSite.siteId))
+        }
+      }
+      // 3. knights
+      else {
+        val nextStable = battlefield.sites.nearestEmptySite(battlefield.units.myQueen.position)
+
+        if (nextStable == null) {
+          debug("Found no site to build a new stable")
+          Wait
+        } else {
+          doAt(nextStable.mapSite, battlefield.touchedSite, BuildStable(nextStable.mapSite.siteId))
+        }
+      }
+    }
+  }
+}
+
 
 // BUILDING STRATEGIES
 
@@ -720,11 +844,9 @@ object BuildKnightsCloserToEnemyQueen : TrainingStrategy {
 
 object BuildArchers : TrainingStrategy {
   override fun getTraining(game: Game): TrainingAction {
-    val battlefield = game.battlefield
-
     // try to find barracks with that type of unit
-    val barracksClosestToFriendlyQueen = battlefield.sites.friendly.archeries.minBy {
-      it.mapSite.position.distanceTo(battlefield.units.friendly.queen.position)
+    val barracksClosestToFriendlyQueen = game.battlefield.sites.friendly.archeries.minBy {
+      it.mapSite.position.distanceTo(game.battlefield.units.friendly.queen.position)
     }?.mapSite?.siteId
 
     return if (barracksClosestToFriendlyQueen != null) {
@@ -754,3 +876,40 @@ data class BalancedTrainingStrategy(val maxKnightToArcherRatio: Float) : Trainin
   }
 }
 
+fun main(args: Array<String>) {
+  val input = Scanner(System.`in`)
+  val numSites = input.nextInt()
+
+  val mapSites = (0 until numSites).map {
+    val siteId = input.nextInt()
+    val x = input.nextInt()
+    val y = input.nextInt()
+    val radius = input.nextInt()
+
+    MapSite(siteId, Position(x, y), radius)
+  }
+
+  val game = Game(
+    mapSites = mapSites,
+    internalMetaStrategy = FixedMeta(
+      CombinerStrategy(
+        OutmineAndDefend(10),
+        BalancedTrainingStrategy(3f)
+      )
+    )
+  )
+
+  // game loop
+  while (true) {
+    val gold = input.nextInt()
+    val touchedSite = input.nextInt()
+
+    val sites = parseSites(mapSites, numSites, input)
+    val numUnits = input.nextInt()
+    val units = parseUnits(numUnits, input)
+
+    val battlefield = Battlefield(gold, TouchedSite(touchedSite), sites, units)
+
+    game.playTurn(battlefield)
+  }
+}
