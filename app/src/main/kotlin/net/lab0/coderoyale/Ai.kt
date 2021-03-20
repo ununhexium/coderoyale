@@ -24,55 +24,58 @@ fun debug(any: Any?) {
 // CONSTANTS //
 ///////////////
 
-// battlefield
+object Const {
 
-const val MAX_WIDTH = 1920
-const val MAX_HEIGHT = 1000
+  // battlefield
 
-// mining
+  const val MAX_WIDTH = 1920
+  const val MAX_HEIGHT = 1000
 
-const val MAX_GOLD_MINE_RATE = 5
+  // mining
 
-// sites
+  const val MAX_GOLD_MINE_RATE = 5
 
-const val EMPTY_STRUCTURE_TYPE = -1
-const val GOLD_MINE_TYPE = 0
-const val TOWER_TYPE = 1
-const val BARRACKS_TYPE = 2
+  // sites
 
-// sites and units
+  const val EMPTY_STRUCTURE_TYPE = -1
+  const val GOLD_MINE_TYPE = 0
+  const val TOWER_TYPE = 1
+  const val BARRACKS_TYPE = 2
 
-const val NO_OWNER = -1
-const val FRIENDLY_OWNER = 0
-const val ENEMY_OWNER = 1
+  // sites and units
 
-// units
+  const val NO_OWNER = -1
+  const val FRIENDLY_OWNER = 0
+  const val ENEMY_OWNER = 1
 
-const val QUEEN_TYPE = -1
-const val KNIGHT_TYPE = 0
-const val ARCHER_TYPE = 1
-const val GIANT_TYPE = 2
+  // units
 
-const val KNIGHT_COST = 80
-const val ARCHER_COST = 100
-const val GIANT_COST = 140
+  const val QUEEN_TYPE = -1
+  const val KNIGHT_TYPE = 0
+  const val ARCHER_TYPE = 1
+  const val GIANT_TYPE = 2
 
-const val KNIGHT_GROUP_SIZE = 4
-const val ARCHER_GROUP_SIZE = 2
-const val GIANT_GROUP_SIZE = 1
+  const val KNIGHT_COST = 80
+  const val ARCHER_COST = 100
+  const val GIANT_COST = 140
 
-const val QUEEN_RADIUS = 30
-const val QUEEN_SPEED = 60
-const val QUEEN_START_HP = 100
+  const val KNIGHT_GROUP_SIZE = 4
+  const val ARCHER_GROUP_SIZE = 2
+  const val GIANT_GROUP_SIZE = 1
 
-const val CREEP_DECAY_RATE = 1
+  const val QUEEN_RADIUS = 30
+  const val QUEEN_SPEED = 60
+  const val QUEEN_START_HP = 100
+
+  const val CREEP_DECAY_RATE = 1
+}
 
 inline class TouchedSite(val siteId: Int) {
   val touches: Boolean
     get() = siteId != -1
 }
 
-data class MapSite(val id: Int, val position: Position, val radius: Int)
+class MapSite(val id: Int, val position: Position, val radius: Int)
 
 // TODO param 1 and 2: is that info available for my units or also for enemy units?
 sealed class Site(
@@ -86,15 +89,15 @@ sealed class Site(
 ) {
 
   // structure type
-  val isEmpty: Boolean = structureType == EMPTY_STRUCTURE_TYPE
-  val isGoldMine: Boolean = structureType == GOLD_MINE_TYPE
-  val isTower: Boolean = structureType == TOWER_TYPE
-  val isBarracks: Boolean = structureType == BARRACKS_TYPE
+  val isEmpty: Boolean = structureType == Const.EMPTY_STRUCTURE_TYPE
+  val isGoldMine: Boolean = structureType == Const.GOLD_MINE_TYPE
+  val isTower: Boolean = structureType == Const.TOWER_TYPE
+  val isBarracks: Boolean = structureType == Const.BARRACKS_TYPE
 
   // owner
-  val isFriendly: Boolean = owner == FRIENDLY_OWNER
-  val isEnemy: Boolean = owner == ENEMY_OWNER
-  val isNotOwned: Boolean = owner == NO_OWNER
+  val isFriendly: Boolean = owner == Const.FRIENDLY_OWNER
+  val isEnemy: Boolean = owner == Const.ENEMY_OWNER
+  val isNotOwned: Boolean = owner == Const.NO_OWNER
 
   class Empty(
     mapSite: MapSite,
@@ -169,10 +172,6 @@ data class PlayerSites(
   val archeries: List<Site.Barracks>,
   val phlegra: List<Site.Barracks>
 ) {
-  companion object {
-    val empty = PlayerSites(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
-  }
-
   constructor(parsing: SitesParsing) : this(
     parsing.goldMines,
     parsing.towers,
@@ -183,16 +182,8 @@ data class PlayerSites(
 
   // aggregates
   val barracks = stables + archeries + phlegra
-  val allOwned: List<Site> = goldMines + towers + barracks
+  val allOwned = goldMines + towers + barracks
 }
-
-class SitesParsing(
-  val goldMines: MutableList<Site.GoldMine> = mutableListOf(),
-  val towers: MutableList<Site.Tower> = mutableListOf(),
-  val stables: MutableList<Site.Barracks> = mutableListOf(),
-  val archeries: MutableList<Site.Barracks> = mutableListOf(),
-  val phlegra: MutableList<Site.Barracks> = mutableListOf()
-)
 
 data class Sites(
   val emptySites: List<Site.Empty>,
@@ -237,15 +228,6 @@ data class PlayerSoldiers(
   val archers: List<Soldier.Archer>,
   val giants: List<Soldier.Giant>
 ) {
-  companion object {
-    val EMPTY = PlayerSoldiers(
-      Soldier.Queen(Position(0, 0), NO_OWNER, QUEEN_TYPE, 0),
-      emptyList(),
-      emptyList(),
-      emptyList()
-    )
-  }
-
   constructor(
     parsing: SoldiersParsing
   ) : this(
@@ -259,21 +241,11 @@ data class PlayerSoldiers(
   val all: List<Soldier> = knights + archers + giants + queen
 }
 
-data class SoldiersParsing(
-  val knights: MutableList<Soldier.Knight> = mutableListOf(),
-  val archers: MutableList<Soldier.Archer> = mutableListOf(),
-  val giants: MutableList<Soldier.Giant> = mutableListOf()
-) {
-  lateinit var queen: Soldier.Queen
-}
-
 data class Soldiers(
   val friendly: PlayerSoldiers,
   val enemy: PlayerSoldiers
 ) {
   val myQueen: Soldier.Queen = friendly.queen
-
-  val all = friendly.all + enemy.all
 }
 
 data class Position(val x: Int, val y: Int) {
@@ -299,16 +271,16 @@ sealed class Output(val command: String) {
   sealed class Intent(command: String) : Output(command) {
 
     object Wait : Intent("WAIT")
-    data class Move(val position: Position) : Intent("MOVE ${position.x} ${position.y}") {
+    class Move(val position: Position) : Intent("MOVE ${position.x} ${position.y}") {
       constructor(x: Int, y: Int) : this(Position(x, y))
     }
 
-    data class BuildStable(val siteId: Int) : Intent("BUILD $siteId BARRACKS-KNIGHT")
-    data class BuildArchery(val siteId: Int) : Intent("BUILD $siteId BARRACKS-ARCHER")
-    data class BuildPhlegra(val siteId: Int) : Intent("BUILD $siteId BARRACKS-GIANT")
+    class BuildStable(siteId: Int) : Intent("BUILD $siteId BARRACKS-KNIGHT")
+    class BuildArchery(siteId: Int) : Intent("BUILD $siteId BARRACKS-ARCHER")
+    class BuildPhlegra(siteId: Int) : Intent("BUILD $siteId BARRACKS-GIANT")
 
-    data class BuildTower(val siteId: Int) : Intent("BUILD $siteId TOWER")
-    data class BuildMine(val siteId: Int) : Intent("BUILD $siteId MINE")
+    class BuildTower(siteId: Int) : Intent("BUILD $siteId TOWER")
+    class BuildMine(siteId: Int) : Intent("BUILD $siteId MINE")
 
     companion object {
       /**
@@ -324,10 +296,8 @@ sealed class Output(val command: String) {
     object None : TrainingAction("TRAIN")
     class AtLocation(locationIds: List<Int>) :
       TrainingAction("TRAIN " + locationIds.joinToString(" ") { it.toString() }) {
-      constructor(
-        locationId: Int,
-        vararg moreLocationIds: Int
-      ) : this(listOf(locationId) + moreLocationIds.toList())
+      constructor(locationId: Int, vararg moreLocationIds: Int) :
+          this(listOf(locationId) + moreLocationIds.toList())
     }
   }
 }
@@ -340,9 +310,9 @@ data class Battlefield(
 ) {
 
   // gold
-  val canBuildKnight: Boolean = gold >= KNIGHT_COST
-  val canBuildArcher: Boolean = gold >= ARCHER_COST
-  val canBuildGiant: Boolean = gold >= GIANT_COST
+  val canBuildKnight: Boolean = gold >= Const.KNIGHT_COST
+  val canBuildArcher: Boolean = gold >= Const.ARCHER_COST
+  val canBuildGiant: Boolean = gold >= Const.GIANT_COST
 
   /**
    * Friendly gold mines rate
@@ -374,12 +344,19 @@ data class Battlefield(
 // STRATEGIES //
 ////////////////
 
-interface Strategy<S> {
+interface Strategy<S> where S:Any? {
   val done: Boolean
     get() = false
 
-  fun play(game: Game): S
+  fun play(game: Game): S?
 }
+
+interface FallbackStrategy<S>: Strategy<S> where S:Any {
+  override fun play(game: Game): S
+}
+
+typealias MetaStrategy = FallbackStrategy<GameStrategy>
+typealias GameStrategy = Strategy<Decision>
 
 class StrategySequence<S>(val first: Strategy<S>, val next: Strategy<S>) : Strategy<S> {
   override val done
@@ -389,17 +366,10 @@ class StrategySequence<S>(val first: Strategy<S>, val next: Strategy<S>) : Strat
     if (!first.done) first.play(game) else next.play(game)
 }
 
-interface MetaStrategy : Strategy<GameStrategy>
-
 fun <S> Strategy<S>.then(next: Strategy<S>): Strategy<S> =
   StrategySequence(this, next)
 
 interface IntentStrategy : Strategy<Intent> {
-  object EMPTY : IntentStrategy {
-    override fun play(game: Game) = Wait
-    override val done = true
-  }
-
   override fun play(game: Game): Intent
 }
 
@@ -407,22 +377,8 @@ interface TrainingStrategy : Strategy<TrainingAction> {
   override fun play(game: Game): TrainingAction
 }
 
-typealias GameStrategy = Strategy<Decision>
-
-fun IntentStrategy.supportedBy(
-  training: TrainingStrategy
-): GameStrategy = EitherDone(this, training)
-
-class BothDone(
-  val intent: IntentStrategy,
-  val training: TrainingStrategy
-) : GameStrategy {
-  override val done
-    get() = intent.done && training.done
-
-  override fun play(game: Game) =
-    Decision(intent.play(game), training.play(game))
-}
+fun IntentStrategy.and(training: TrainingStrategy): GameStrategy =
+  EitherDone(this, training)
 
 class EitherDone(
   val intent: IntentStrategy,
@@ -448,6 +404,9 @@ class Decision(
   }
 }
 
+//////////
+// Game //
+//////////
 
 class Turn(
   val battlefield: Battlefield,
@@ -505,7 +464,9 @@ class Game(
     currentBattlefield = battlefield
     currentStrategy = meta.play(this)
 
-    val decision = currentStrategy.play(this)
+    val decision = currentStrategy.play(this) ?: Decision.NoOp
+
+    if(decision == Decision.NoOp) debug("WW: used fallback noop")
 
     out = listOf(decision.intent.command, decision.training.command)
 
@@ -530,34 +491,25 @@ class Game(
   }
 }
 
-object Utils {
-  // TODO: detect destroyed buildings
-//  fun detectMaxedMines(lastTurn: Turn, battlefield: Battlefield): Site.GoldMine? {
-//    // nothing to detect if the last turn was not about building a mine
-//    val lastIntent = lastTurn.decision.intent
-//    if (lastIntent !is BuildMine) return null
-//
-//    // it can be destroyed by a creep on the same turn as it is built
-//    val upgradedGoldMine =
-//      battlefield.sites.friendly.goldMines.withId(lastIntent.siteId) ?: return null
-//
-//    /*
-//     * May be null if the mine was not built, like there is a command
-//     * issued from the wrong position, when not touching the site.
-//     */
-//    val previousMiningRate =
-//      lastTurn.battlefield.sites.friendly.goldMines.withId(lastIntent.siteId) ?: return null
-//    val currentMiningRate =
-//      battlefield.sites.friendly.goldMines.withId(lastIntent.siteId) ?: return null
-//
-//    val increase = currentMiningRate.incomeRate - previousMiningRate.incomeRate
-//    return if (increase == 0) upgradedGoldMine else null
-//  }
+/////////////
+// Parsing //
+/////////////
+
+class SitesParsing(
+  val goldMines: MutableList<Site.GoldMine> = mutableListOf(),
+  val towers: MutableList<Site.Tower> = mutableListOf(),
+  val stables: MutableList<Site.Barracks> = mutableListOf(),
+  val archeries: MutableList<Site.Barracks> = mutableListOf(),
+  val phlegra: MutableList<Site.Barracks> = mutableListOf()
+)
+
+data class SoldiersParsing(
+  val knights: MutableList<Soldier.Knight> = mutableListOf(),
+  val archers: MutableList<Soldier.Archer> = mutableListOf(),
+  val giants: MutableList<Soldier.Giant> = mutableListOf()
+) {
+  lateinit var queen: Soldier.Queen
 }
-
-private fun <T> List<T>.withId(siteId: Int) where T : Site =
-  this.firstOrNull { it.site.id == siteId }
-
 
 fun parseSites(mapSites: List<MapSite>, numSites: Int, input: Scanner): Sites {
 
@@ -589,7 +541,7 @@ fun parseSites(mapSites: List<MapSite>, numSites: Int, input: Scanner): Sites {
 
     when (structureType) {
 
-      EMPTY_STRUCTURE_TYPE -> {
+      Const.EMPTY_STRUCTURE_TYPE -> {
         val empty = Site.Empty(
           mapSites.first { it.id == siteId },
           gold,
@@ -602,7 +554,7 @@ fun parseSites(mapSites: List<MapSite>, numSites: Int, input: Scanner): Sites {
         emptySites.add(empty)
       }
 
-      GOLD_MINE_TYPE -> {
+      Const.GOLD_MINE_TYPE -> {
         val mine = Site.GoldMine(
           mapSites.first { it.id == siteId },
           gold,
@@ -616,7 +568,7 @@ fun parseSites(mapSites: List<MapSite>, numSites: Int, input: Scanner): Sites {
         ownedSites[owner].goldMines.add(mine)
       }
 
-      TOWER_TYPE -> {
+      Const.TOWER_TYPE -> {
         val tower = Site.Tower(
           mapSites.first { it.id == siteId },
           gold,
@@ -630,7 +582,7 @@ fun parseSites(mapSites: List<MapSite>, numSites: Int, input: Scanner): Sites {
         ownedSites[owner].towers.add(tower)
       }
 
-      BARRACKS_TYPE -> {
+      Const.BARRACKS_TYPE -> {
         val barracks = Site.Barracks(
           mapSites.first { it.id == siteId },
           gold,
@@ -642,15 +594,15 @@ fun parseSites(mapSites: List<MapSite>, numSites: Int, input: Scanner): Sites {
         )
 
         when (param2) {
-          KNIGHT_TYPE -> {
+          Const.KNIGHT_TYPE -> {
             ownedSites[owner].stables.add(barracks)
           }
 
-          ARCHER_TYPE -> {
+          Const.ARCHER_TYPE -> {
             ownedSites[owner].archeries.add(barracks)
           }
 
-          GIANT_TYPE -> {
+          Const.GIANT_TYPE -> {
             ownedSites[owner].phlegra.add(barracks)
           }
         }
@@ -661,8 +613,8 @@ fun parseSites(mapSites: List<MapSite>, numSites: Int, input: Scanner): Sites {
 
   return Sites(
     emptySites,
-    friendly = PlayerSites(ownedSites[FRIENDLY_OWNER]),
-    enemy = PlayerSites(ownedSites[ENEMY_OWNER])
+    friendly = PlayerSites(ownedSites[Const.FRIENDLY_OWNER]),
+    enemy = PlayerSites(ownedSites[Const.ENEMY_OWNER])
   )
 }
 
@@ -683,16 +635,16 @@ private fun parseUnits(
     val soldierGroup = parsing[owner]
 
     when (unitType) {
-      QUEEN_TYPE -> {
+      Const.QUEEN_TYPE -> {
         soldierGroup.queen = Soldier.Queen(Position(x, y), owner, unitType, health)
       }
-      KNIGHT_TYPE -> {
+      Const.KNIGHT_TYPE -> {
         soldierGroup.knights.add(Soldier.Knight(Position(x, y), owner, unitType, health))
       }
-      ARCHER_TYPE -> {
+      Const.ARCHER_TYPE -> {
         soldierGroup.archers.add(Soldier.Archer(Position(x, y), owner, unitType, health))
       }
-      GIANT_TYPE -> {
+      Const.GIANT_TYPE -> {
         soldierGroup.giants.add(Soldier.Giant(Position(x, y), owner, unitType, health))
       }
       else -> throw IllegalStateException("No unit type like $unitType")
@@ -700,8 +652,8 @@ private fun parseUnits(
   }
 
   return Soldiers(
-    friendly = PlayerSoldiers(parsing[FRIENDLY_OWNER]),
-    enemy = PlayerSoldiers(parsing[ENEMY_OWNER])
+    friendly = PlayerSoldiers(parsing[Const.FRIENDLY_OWNER]),
+    enemy = PlayerSoldiers(parsing[Const.ENEMY_OWNER])
   )
 }
 
@@ -739,15 +691,6 @@ object StaticMeta : MetaStrategy {
   override fun play(game: Game): GameStrategy = game.strategy
 }
 
-fun strategySequence(vararg strategies: GameStrategy): Strategy<Decision> {
-  var queued = strategies.first() as Strategy<Decision>
-  strategies.drop(1).forEach {
-    queued = queued.then(it)
-  }
-
-  return queued
-}
-
 //////////////////////
 // QUEEN STRATEGIES //
 //////////////////////
@@ -779,7 +722,7 @@ object TakeNextEmptySite : IntentStrategy {
       } else {
         // return to starting location for safety
         Move(
-          history.turns.firstOrNull()?.let { it.battlefield.units.friendly.queen.position }
+          history.turns.firstOrNull()?.battlefield?.units?.friendly?.queen?.position
             ?: game.battlefield.units.friendly.queen.position // 1st turn case
         )
       }
@@ -994,8 +937,8 @@ fun main(args: Array<String>) {
   val game = Game(
     mapSites = mapSites,
     internalMetaStrategy = FixedMeta(
-      BuildOrder().supportedBy(BuildArchers).then(
-        OutmineAndDefend(10).supportedBy(BalancedTrainingStrategy(2.0))
+      BuildOrder().and(BuildArchers).then(
+        OutmineAndDefend(10).and(BalancedTrainingStrategy(2.0))
       )
     )
   )

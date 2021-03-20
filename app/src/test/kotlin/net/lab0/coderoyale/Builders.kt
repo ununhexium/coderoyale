@@ -2,7 +2,7 @@ package net.lab0.coderoyale
 
 import Battlefield
 import Decision
-import FRIENDLY_OWNER
+import Const.FRIENDLY_OWNER
 import Game
 import History
 import MapSite
@@ -11,8 +11,8 @@ import MetaStrategy
 import PlayerSites
 import PlayerSoldiers
 import Position
-import QUEEN_START_HP
-import QUEEN_TYPE
+import Const.QUEEN_START_HP
+import Const.QUEEN_TYPE
 import Output.Intent
 import Site
 import Sites
