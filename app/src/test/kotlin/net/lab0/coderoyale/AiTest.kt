@@ -6,6 +6,7 @@ import Output.Intent.Move
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import Output.TrainingAction.AtLocation
+import SiteId
 
 internal class AiTest {
   @Test
@@ -44,7 +45,7 @@ internal class AiTest {
     val game = buildGame {
       it.strategy {
         it.decision {
-          it.intent(BuildStable(116))
+          it.intent(BuildStable(SiteId(116)))
         }
       }
     }
@@ -62,7 +63,7 @@ internal class AiTest {
     val game = buildGame {
       it.strategy {
         it.decision {
-          it.intent(BuildArchery(116))
+          it.intent(BuildArchery(SiteId(116)))
         }
       }
     }
@@ -80,7 +81,7 @@ internal class AiTest {
     val game = buildGame {
       it.strategy {
         it.decision {
-          it.training(AtLocation(1, 10, 116))
+          it.training(AtLocation(listOf(SiteId(1), SiteId(10), SiteId(116))))
         }
       }
     }

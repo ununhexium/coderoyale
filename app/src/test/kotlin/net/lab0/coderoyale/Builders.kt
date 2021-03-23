@@ -10,7 +10,7 @@ import Memory
 import MetaStrategy
 import PlayerSites
 import PlayerSoldiers
-import Position
+import PositionImpl
 import Const.Units.QueenData
 import Output.Intent
 import Site
@@ -22,6 +22,7 @@ import GameStrategy
 import TouchedSite
 import Output.TrainingAction
 import SimpleStrategy
+import SiteId
 import Turn
 
 
@@ -92,7 +93,7 @@ fun buildPlayerSoldiers(builder: (PlayerSoldiersBuilder) -> Unit): PlayerSoldier
 // TODO: ensure consistent owners
 class PlayerSoldiersBuilder {
   var queen: Soldier.Queen =
-    Soldier.Queen(Position(0, 0), FRIENDLY_OWNER, QueenData.type, QueenData.hp)
+    Soldier.Queen(PositionImpl(0, 0), FRIENDLY_OWNER, QueenData.type, QueenData.hp)
 
   val knights = mutableListOf<Soldier.Knight>()
   val archers = mutableListOf<Soldier.Archer>()
@@ -129,7 +130,7 @@ class BattlefieldBuilder {
   var gold = 0
     private set
 
-  var touchedSite = TouchedSite(-1)
+  var touchedSite = TouchedSite(SiteId(-1))
     private set
 
   var sites = buildSites { }
@@ -178,7 +179,7 @@ fun buildDecision(builder: (DecisionBuilder) -> Unit): Decision {
 
 class DecisionBuilder {
   private var intent: Intent = Intent.Wait
-  private var training: TrainingAction = TrainingAction.None
+  private var training: TrainingAction = TrainingAction.NoTraining
 
   fun build(): Decision {
     return Decision(intent, training)
