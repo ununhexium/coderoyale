@@ -9,6 +9,7 @@ import Output.TrainingAction
 import Output.TrainingAction.NoTraining
 import Site.Tower
 import java.util.*
+import kotlin.math.abs
 import kotlin.math.sqrt
 
 /**
@@ -36,7 +37,7 @@ fun debug(any: Any?) {
 // CONSTANTS //
 ///////////////
 
-object Const {
+object C {
 
   object Battlefield {
     const val MIN_WIDTH = 0
@@ -108,7 +109,7 @@ object Const {
 
   // units
 
-  object Units {
+  object U {
 
     const val CREEP_DECAY_RATE = 1
 
@@ -211,15 +212,15 @@ sealed class Site(
 ) : Position by site.position {
 
   // structure type
-  val isEmpty: Boolean = structureType == Const.Sites.EMPTY_STRUCTURE_TYPE
-  val isGoldMine: Boolean = structureType == Const.Sites.Mine.TYPE
-  val isTower: Boolean = structureType == Const.Sites.Tower.TYPE
-  val isBarracks: Boolean = structureType == Const.Sites.Barracks.TYPE
+  val isEmpty: Boolean = structureType == C.Sites.EMPTY_STRUCTURE_TYPE
+  val isGoldMine: Boolean = structureType == C.Sites.Mine.TYPE
+  val isTower: Boolean = structureType == C.Sites.Tower.TYPE
+  val isBarracks: Boolean = structureType == C.Sites.Barracks.TYPE
 
   // owner
-  val isFriendly: Boolean = owner == Const.FRIENDLY_OWNER
-  val isEnemy: Boolean = owner == Const.ENEMY_OWNER
-  val isNotOwned: Boolean = owner == Const.NO_OWNER
+  val isFriendly: Boolean = owner == C.FRIENDLY_OWNER
+  val isEnemy: Boolean = owner == C.ENEMY_OWNER
+  val isNotOwned: Boolean = owner == C.NO_OWNER
 
   class Empty(
     mapSite: MapSite,
@@ -319,7 +320,13 @@ data class PlayerSites(
   fun isInTowerRange(position: Position) =
     towers.any { it.site.position.distanceTo(position) < it.attackRadius }
 
-  fun isBotInTowerRange(position: Position) = !isInTowerRange(position)
+  fun isAcrossTowerRange(queen: Position, position: Position): Boolean =
+    towers.any { it.site.position.distanceToLine(queen, position) < it.attackRadius }
+
+  fun isNotAcrossTowerRange(queen: Position, position: Position): Boolean =
+    !isAcrossTowerRange(queen, position)
+
+  fun isNotInTowerRange(position: Position) = !isInTowerRange(position)
 }
 
 data class Sites(
@@ -360,18 +367,18 @@ sealed class Soldier(
     Soldier(position, owner, unitType, health)
 
   val radius = when (unitType) {
-    Const.Units.QueenData.type -> Const.Units.QueenData.radius
-    Const.Units.KnightData.type -> Const.Units.KnightData.radius
-    Const.Units.ArcherData.type -> Const.Units.ArcherData.radius
-    Const.Units.GiantData.type -> Const.Units.GiantData.radius
+    C.U.QueenData.type -> C.U.QueenData.radius
+    C.U.KnightData.type -> C.U.KnightData.radius
+    C.U.ArcherData.type -> C.U.ArcherData.radius
+    C.U.GiantData.type -> C.U.GiantData.radius
     else -> throw  IllegalStateException("What is a unit with type $unitType?")
   }
 
   val speed = when (unitType) {
-    Const.Units.QueenData.type -> Const.Units.QueenData.speed
-    Const.Units.KnightData.type -> Const.Units.KnightData.speed
-    Const.Units.ArcherData.type -> Const.Units.ArcherData.speed
-    Const.Units.GiantData.type -> Const.Units.GiantData.speed
+    C.U.QueenData.type -> C.U.QueenData.speed
+    C.U.KnightData.type -> C.U.KnightData.speed
+    C.U.ArcherData.type -> C.U.ArcherData.speed
+    C.U.GiantData.type -> C.U.GiantData.speed
     else -> throw  IllegalStateException("What is a unit with type $unitType?")
   }
 
@@ -410,6 +417,7 @@ interface Position {
   val y: Int
 
   fun distanceTo(other: Position): Double
+  fun distanceToLine(p1: Position, p2: Position): Double
 }
 
 data class PositionImpl(override val x: Int, override val y: Int) : Position {
@@ -428,7 +436,18 @@ data class PositionImpl(override val x: Int, override val y: Int) : Position {
     // and x86 uses 80 bits floating point anyway
     return sqrt((xSqr + ySqr).toDouble())
   }
+
+  override fun distanceToLine(p1: Position, p2: Position): Double {
+    val p0 = this
+    val x21diff = (p2.x - p1.x).toDouble()
+    val y21diff = (p2.y - p1.y).toDouble()
+
+    return abs(
+      x21diff * (p1.y - p0.y) - (p1.x - p0.x) * y21diff
+    ) / sqrt(x21diff * x21diff + y21diff * y21diff)
+  }
 }
+
 
 sealed class Output(val command: String) {
 
@@ -465,9 +484,9 @@ data class Battlefield(
 ) {
 
   // gold
-  val canBuildKnight: Boolean = gold >= Const.Units.KnightData.cost
-  val canBuildArcher: Boolean = gold >= Const.Units.ArcherData.cost
-  val canBuildGiant: Boolean = gold >= Const.Units.GiantData.cost
+  val canBuildKnight: Boolean = gold >= C.U.KnightData.cost
+  val canBuildArcher: Boolean = gold >= C.U.ArcherData.cost
+  val canBuildGiant: Boolean = gold >= C.U.GiantData.cost
 
   /**
    * Friendly gold mines rate
@@ -532,9 +551,9 @@ interface FallbackStrategy<S> : Strategy<S> where S : Any {
 typealias MetaStrategy = FallbackStrategy<GameStrategy>
 typealias GameStrategy = Strategy<Decision>
 typealias IntentStrategy = Strategy<Intent?>
-typealias FallbackIntentStrategy = Strategy<Intent>
+typealias FallbackIntentStrategy = FallbackStrategy<Intent>
 typealias TrainingStrategy = Strategy<TrainingAction?>
-typealias FallbackTrainingStrategy = Strategy<TrainingAction>
+typealias FallbackTrainingStrategy = FallbackStrategy<TrainingAction>
 
 class StrategySequence<S>(val first: Strategy<S>, val next: Strategy<S>) : Strategy<S> {
   override val name: String
@@ -565,7 +584,7 @@ class StrategyAlternative<S>(val first: Strategy<S>, val next: Strategy<S>) : St
   }
 }
 
-class StrategyFallback<S>(val first: Strategy<S>, val next: FallbackStrategy<S>) :
+class StrategyFallback<S>(val first: Strategy<S?>, val next: FallbackStrategy<S>) :
   FallbackStrategy<S> where S : Any {
   override val name: String
     get() = "${first.name} fallback with {${next.name}}"
@@ -602,7 +621,7 @@ fun <S> skip(): Strategy<S> where S : Any? {
   }
 }
 
-fun <S> Strategy<S>.fallbackWith(fallback: FallbackStrategy<S>): FallbackStrategy<S> where S : Any =
+fun <S> Strategy<S?>.fallbackWith(fallback: FallbackStrategy<S>): FallbackStrategy<S> where S : Any =
   StrategyFallback(this, fallback)
 
 fun FallbackIntentStrategy.andTrain(training: FallbackTrainingStrategy): GameStrategy =
@@ -796,7 +815,7 @@ fun parseSites(mapSites: List<MapSite>, numSites: Int, input: Scanner): Sites {
 
     when (structureType) {
 
-      Const.Sites.EMPTY_STRUCTURE_TYPE -> {
+      C.Sites.EMPTY_STRUCTURE_TYPE -> {
         val empty = Site.Empty(
           mapSites.first { it.id.value == siteId },
           gold,
@@ -809,7 +828,7 @@ fun parseSites(mapSites: List<MapSite>, numSites: Int, input: Scanner): Sites {
         emptySites.add(empty)
       }
 
-      Const.Sites.Mine.TYPE -> {
+      C.Sites.Mine.TYPE -> {
         val mine = Site.GoldMine(
           mapSites.first { it.id.value == siteId },
           gold,
@@ -823,7 +842,7 @@ fun parseSites(mapSites: List<MapSite>, numSites: Int, input: Scanner): Sites {
         ownedSites[owner].goldMines.add(mine)
       }
 
-      Const.Sites.Tower.TYPE -> {
+      C.Sites.Tower.TYPE -> {
         val tower = Tower(
           mapSites.first { it.id.value == siteId },
           gold,
@@ -837,7 +856,7 @@ fun parseSites(mapSites: List<MapSite>, numSites: Int, input: Scanner): Sites {
         ownedSites[owner].towers.add(tower)
       }
 
-      Const.Sites.Barracks.TYPE -> {
+      C.Sites.Barracks.TYPE -> {
         val barracks = Site.Barracks(
           mapSites.first { it.id.value == siteId },
           gold,
@@ -849,15 +868,15 @@ fun parseSites(mapSites: List<MapSite>, numSites: Int, input: Scanner): Sites {
         )
 
         when (param2) {
-          Const.Units.KnightData.type -> {
+          C.U.KnightData.type -> {
             ownedSites[owner].stables.add(barracks)
           }
 
-          Const.Units.ArcherData.type -> {
+          C.U.ArcherData.type -> {
             ownedSites[owner].archeries.add(barracks)
           }
 
-          Const.Units.GiantData.type -> {
+          C.U.GiantData.type -> {
             ownedSites[owner].phlegra.add(barracks)
           }
         }
@@ -868,8 +887,8 @@ fun parseSites(mapSites: List<MapSite>, numSites: Int, input: Scanner): Sites {
 
   return Sites(
     emptySites,
-    friendly = PlayerSites(ownedSites[Const.FRIENDLY_OWNER]),
-    enemy = PlayerSites(ownedSites[Const.ENEMY_OWNER])
+    friendly = PlayerSites(ownedSites[C.FRIENDLY_OWNER]),
+    enemy = PlayerSites(ownedSites[C.ENEMY_OWNER])
   )
 }
 
@@ -890,16 +909,16 @@ private fun parseUnits(
     val soldierGroup = parsing[owner]
 
     when (unitType) {
-      Const.Units.QueenData.type -> {
+      C.U.QueenData.type -> {
         soldierGroup.queen = Soldier.Queen(PositionImpl(x, y), owner, unitType, health)
       }
-      Const.Units.KnightData.type -> {
+      C.U.KnightData.type -> {
         soldierGroup.knights.add(Soldier.Knight(PositionImpl(x, y), owner, unitType, health))
       }
-      Const.Units.ArcherData.type -> {
+      C.U.ArcherData.type -> {
         soldierGroup.archers.add(Soldier.Archer(PositionImpl(x, y), owner, unitType, health))
       }
-      Const.Units.GiantData.type -> {
+      C.U.GiantData.type -> {
         soldierGroup.giants.add(Soldier.Giant(PositionImpl(x, y), owner, unitType, health))
       }
       else -> throw IllegalStateException("No unit type like $unitType")
@@ -907,8 +926,8 @@ private fun parseUnits(
   }
 
   return Soldiers(
-    friendly = PlayerSoldiers(parsing[Const.FRIENDLY_OWNER]),
-    enemy = PlayerSoldiers(parsing[Const.ENEMY_OWNER])
+    friendly = PlayerSoldiers(parsing[C.FRIENDLY_OWNER]),
+    enemy = PlayerSoldiers(parsing[C.ENEMY_OWNER])
   )
 }
 
@@ -931,7 +950,15 @@ private fun parseUnits(
 // QUEEN STRATEGIES //
 //////////////////////
 
-fun NoIntent(): FallbackStrategy2<Wait> = { Wait }
+object WaitIntent : FallbackIntentStrategy {
+  override val name: String
+    get() = "No Intent fallback"
+
+  override fun play(game: Game): Wait {
+    debug("WW: used fallback intent")
+    return Wait
+  }
+}
 
 object TakeNextEmptySite : IntentStrategy {
   override val name: String
@@ -1111,7 +1138,11 @@ class ExtendMines(val targetGoldRate: Int = Int.MAX_VALUE) : IntentStrategy {
       }
       .firstOrNull {
         it.incomeRate < it.maxIncomeRateSize
-      } ?: game.battlefield.nearestEmpty
+      } ?: game.battlefield.sites.emptySites.filter {
+      game.battlefield.sites.enemy.isNotAcrossTowerRange(game.battlefield.myQueen, it)
+    }.sortedBy {
+      it.distanceTo(game.battlefield.myQueen)
+    }.firstOrNull()
 
     if (toUpgrade == null) {
       debug("WW: didn't find a site to build a mine")
@@ -1122,12 +1153,12 @@ class ExtendMines(val targetGoldRate: Int = Int.MAX_VALUE) : IntentStrategy {
   }
 }
 
-object PrepareAttack : IntentStrategy {
+class PrepareAttack(val stableCount: Int = 0) : IntentStrategy {
   override val name: String
     get() = "Prepare attack"
 
   override fun done(game: Game): Boolean {
-    return game.battlefield.sites.friendly.stables.isNotEmpty()
+    return game.battlefield.sites.friendly.stables.size >= stableCount
   }
 
   override fun play(game: Game): Intent {
@@ -1179,25 +1210,30 @@ class TowerDefense(val towerCount: Int = 3) : IntentStrategy {
   override val name: String
     get() = "Tower defense(${towerCount})"
 
-  private var computedIntent: Intent? = null
+  private var computedIntent: IntentStrategy? = null
 
   override fun play(game: Game): Intent? {
-    if (computedIntent == null) {
-      game.battlefield.sites.emptySites
+    val state = computedIntent
+    if (state == null) {
+      computedIntent = game.battlefield.sites.emptySites
         .sortedBy { it.distanceTo(game.battlefield.myQueen) }
         .take(towerCount)
-        .map { MaxTower(it.site.id) as IntentStrategy }
-        .fold(skip<Intent?>()) { acc, e ->
+        .map { MaximizeTowerHp(it.site.id) as IntentStrategy }
+        .fold(skip()) { acc, e ->
           acc.then(e)
         }
     }
-    return computedIntent
+
+    val state2 = computedIntent
+    return if (state2 != null) {
+      return state2.play(game)
+    } else null
   }
 }
 
-class MaxTower(
+class MaximizeTowerHp(
   val siteId: SiteId,
-  val targetHp: Int = Const.Sites.Tower.MAX_HP - Const.Sites.Tower.TOWER_HP_DECAY
+  val targetHp: Int = C.Sites.Tower.MAX_HP - C.Sites.Tower.TOWER_HP_DECAY
 ) : IntentStrategy {
   override val name: String
     get() = "Max tower(${siteId}@${targetHp}hp)"
@@ -1260,6 +1296,16 @@ class BuildOrder : IntentStrategy {
 /////////////////////////
 // TRAINING STRATEGIES //
 /////////////////////////
+
+object TrainNothing : FallbackTrainingStrategy {
+  override val name: String
+    get() = "No training strategy"
+
+  override fun play(game: Game): NoTraining {
+    debug("WW: used fallback training")
+    return NoTraining
+  }
+}
 
 object BuildKnightsCloserToEnemyQueen : TrainingStrategy {
   override val name: String
@@ -1329,7 +1375,7 @@ object TrainDefense : TrainingStrategy {
 
   override fun play(game: Game): TrainingAction {
     // save money for archers
-    if (game.battlefield.gold < Const.Units.ArcherData.cost) return NoTraining
+    if (game.battlefield.gold < C.U.ArcherData.cost) return NoTraining
 
     // FIXME: improve with multiple site building if necessary
     return game.battlefield.sites.friendly.archeries.firstOrNull { it.isAvailable }?.site?.id?.let {
@@ -1345,11 +1391,11 @@ fun Attack(game: Game): TrainingAction {
 
   if (!towersAreCountered) {
     // save money to make a giant
-    if (game.battlefield.gold < Const.Units.GiantData.cost) return NoTraining
+    if (game.battlefield.gold < C.U.GiantData.cost) return NoTraining
   }
 
   // save money for a knight
-  if (game.battlefield.gold < Const.Units.KnightData.cost) return NoTraining
+  if (game.battlefield.gold < C.U.KnightData.cost) return NoTraining
 
   // FIXME: improve with multiple site building if necessary
   return game.battlefield.sites.friendly.stables.firstOrNull { it.isAvailable }?.site?.id?.let {
@@ -1386,24 +1432,15 @@ object ReactiveMeta : MetaStrategy {
   override val name: String
     get() = "Reactive meta"
 
+  val prepareAttackThenDefend =
+    PrepareAttack(1).then(ExtendMines(5)).then(PrepareAttack(2)).then(ExtendMines())
+
   override fun play(game: Game): GameStrategy {
-    val intent = if (
-      game.battlefield.units.enemy.queen.health < Const.Units.QueenData.hp / 3 ||
-      game.battlefield.goldMinesRate >= 8
-    ) {
-      PrepareAttack
-        .then(ExtendMines(targetGoldRate = 8))
-        .then(TowerDefense(3).fallbackWith(NoIntent))
-    } else {
-      ExtendMines()
-    }
+    val intent = prepareAttackThenDefend
 
-    val training: Strategy<TrainingAction?> =
-      if (game.battlefield.units.enemy.knights.isNotEmpty()) {
-        TrainDefense.then(BuildArchers)
-      } else BuildKnightsCloserToEnemyQueen
+    val training: Strategy<TrainingAction?> = BuildKnightsCloserToEnemyQueen
 
-    return intent.andTrain(training)
+    return intent.fallbackWith(WaitIntent).andTrain(training.fallbackWith(TrainNothing))
   }
 }
 

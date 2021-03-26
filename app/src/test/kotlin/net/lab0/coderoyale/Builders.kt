@@ -2,7 +2,7 @@ package net.lab0.coderoyale
 
 import Battlefield
 import Decision
-import Const.FRIENDLY_OWNER
+import C.FRIENDLY_OWNER
 import Game
 import History
 import MapSite
@@ -11,7 +11,7 @@ import MetaStrategy
 import PlayerSites
 import PlayerSoldiers
 import PositionImpl
-import Const.Units.QueenData
+import C.U.QueenData
 import Output.Intent
 import Site
 import Sites
